@@ -21,7 +21,7 @@ const d = computed(() => {
     version: s?.installedVersion
       ? `v${s.installedVersion}`
       : s?.systemDshVersion
-        ? t("card.systemVersion", { v: s.systemDshVersion })
+        ? `v${s.systemDshVersion}`
         : t("card.notInstalled"),
     node: s?.nodeVersion ?? null,
     pid: s?.pid ?? null,
