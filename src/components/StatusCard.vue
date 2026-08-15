@@ -10,6 +10,8 @@ const props = defineProps<{
   /** 有可用新版本（registry 版本 > 已装/系统版本）时显示升级箭头 */
   updateAvailable?: boolean;
   updateTo?: string | null;
+  /** 升级入口文案（托管=更新到 vX；非托管=安装托管副本 vX） */
+  updateLabel?: string;
 }>();
 const emit = defineEmits<{ (e: "update-click"): void }>();
 
@@ -62,7 +64,7 @@ const d = computed(() => {
       <button
         v-if="updateAvailable"
         class="up-arrow"
-        :title="t('dash.updateTo', { v: updateTo ?? '' })"
+        :title="updateLabel ?? t('dash.updateTo', { v: updateTo ?? '' })"
         @click="emit('update-click')"
       >
         ⬆

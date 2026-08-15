@@ -19,11 +19,20 @@ const running = computed(
   () => store.status?.status === "running" || store.status?.status === "starting",
 );
 const external = computed(() => store.status?.status === "external");
-// 仅在 registry 上确有更新版本时才展示更新按钮（查询失败则保持隐藏）
-const hasUpdate = computed(() => {
-  const inst = store.status?.installedVersion;
-  return latest.value !== null && !!inst && latest.value !== inst;
-});
+/** 是否有托管副本（决定升级方式：托管=更新，非托管=安装托管副本） */
+const managed = computed(() => !!store.status?.installedVersion);
+/** 当前展示的版本：托管版本优先，否则系统版本 */
+const curVersion = computed(
+  () => store.status?.installedVersion ?? store.status?.systemDshVersion ?? null,
+);
+// 仅在 registry 上确有更新版本时才展示升级入口（查询失败则保持隐藏）
+const hasUpdate = computed(
+  () => latest.value !== null && !!curVersion.value && latest.value !== curVersion.value,
+);
+/** 升级入口文案：托管 → 更新到 vX；非托管 → 安装托管副本 vX */
+const updateLabel = computed(() =>
+  t(managed.value ? "dash.updateTo" : "dash.adoptNew", { v: latest.value ?? "" }),
+);
 const uptime = ref(liveUptimeMs());
 
 function tick() {
@@ -41,10 +50,19 @@ async function checkUpdate() {
 }
 onMounted(checkUpdate);
 
+// 升级需区分方式：
+// 托管副本 → update_dsh（停 → 装 → 恢复运行）；
+// 系统安装（非托管）→ 安装托管副本 vX，转为本应用托管（不动系统安装）
 async function doUpdate() {
   await run(async () => {
-    const v = await api.updateDsh();
-    latest.value = v; // 已更新到该版本 → 按钮隐藏
+    if (managed.value) {
+      const v = await api.updateDsh();
+      latest.value = v; // 已更新到该版本 → 入口隐藏
+    } else {
+      const res = await api.ensureRuntime(latest.value ?? undefined);
+      latest.value = res.version;
+      showToast(t("dash.managedInstalled", { v: res.version }));
+    }
   }, "update");
 }
 
@@ -127,7 +145,7 @@ async function onForceStop() {
         :disabled="busy !== null"
         @click="doUpdate"
       >
-        {{ busy === "update" ? t("dash.updating") : t("dash.updateTo", { v: latest ?? "" }) }}
+        {{ busy === "update" ? t("dash.updating") : updateLabel }}
       </button>
     </div>
     <p v-if="external" class="hint">
@@ -141,6 +159,7 @@ async function onForceStop() {
         :uptime="uptime"
         :update-available="hasUpdate"
         :update-to="latest"
+        :update-label="updateLabel"
         @update-click="doUpdate"
       />
       <CallbackCard class="s12" />
