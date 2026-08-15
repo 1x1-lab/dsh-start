@@ -1,0 +1,60 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "dsh-start",
+  "version": "0.1.0",
+  "identifier": "com.dshstart.app",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "DSH-start · DSH 托管控制台",
+        "width": 750,
+        "height": 530,
+        "minWidth": 660,
+        "minHeight": 500,
+        "resizable": true,
+        "center": true,
+        "visible": false,
+        "transparent": true,
+        "decorations": false,
+        "dragDropEnabled": false,
+        "shadow": true,
+        "windowEffects": {
+          "effects": ["acrylic", "underWindowBackground", "blur"],
+          "state": "followsWindowActiveState",
+          "color": "#EDEFF4FF",
+          "radius": 10
+        }
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "DSH 自动安装与自启动托管",
+    "longDescription": "自动安装并托管运行 DSH (DeepSeek Harness)，支持开机自启与回调重启。",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "currentUser",
+        "displayLanguageSelector": false
+      }
+    }
+  }
+}
