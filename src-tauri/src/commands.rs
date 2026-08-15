@@ -13,6 +13,8 @@ pub struct StatusPayload {
     pub pid: Option<u32>,
     pub port: u16,
     pub installed_version: Option<String>,
+    /// 系统层面（PATH 全局安装 / npm npx 缓存）存在的 dsh 版本；None = 未发现
+    pub system_dsh_version: Option<String>,
     pub uptime_ms: Option<u64>,
     pub last_error: Option<String>,
     pub control_port: Option<u16>,
@@ -28,6 +30,7 @@ pub struct RuntimeInfo {
     pub node_present: bool,
     pub node_version: Option<String>,
     pub installed_version: Option<String>,
+    pub system_dsh_version: Option<String>,
     pub runtime_dir: String,
 }
 
@@ -103,6 +106,7 @@ pub fn get_runtime_info(app: AppHandle) -> RuntimeInfo {
         node_present: node.is_some(),
         node_version: node.as_ref().map(|n| n.node_version.clone()),
         installed_version: runtime::installed_version(&app),
+        system_dsh_version: runtime::system_dsh_version(),
         runtime_dir: runtime::runtime_dir(&app).display().to_string(),
     }
 }

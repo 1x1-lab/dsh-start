@@ -5,6 +5,8 @@ export interface StatusPayload {
   pid: number | null;
   port: number;
   installedVersion: string | null;
+  /** 系统层面（PATH 全局安装 / npx 缓存）存在的 dsh 版本 */
+  systemDshVersion: string | null;
   uptimeMs: number | null;
   lastError: string | null;
   controlPort: number | null;
@@ -18,6 +20,7 @@ export interface RuntimeInfo {
   nodePresent: boolean;
   nodeVersion: string | null;
   installedVersion: string | null;
+  systemDshVersion: string | null;
   runtimeDir: string;
 }
 

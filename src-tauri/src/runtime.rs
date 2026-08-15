@@ -123,6 +123,56 @@ pub fn installed_version(app: &AppHandle) -> Option<String> {
         .map(|s| s.to_string())
 }
 
+fn looks_like_version(s: &str) -> bool {
+    let t = s.trim();
+    let mut chars = t.chars();
+    matches!(chars.next(), Some(c) if c.is_ascii_digit()) && t.contains('.')
+}
+
+fn npx_cache_dirs() -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    #[cfg(windows)]
+    let root = std::env::var_os("LOCALAPPDATA")
+        .map(|p| Path::new(&p).join("npm-cache/_npx"));
+    #[cfg(not(windows))]
+    let root = std::env::var_os("HOME").map(|p| Path::new(&p).join(".npm/_npx"));
+    if let Some(root) = root {
+        if let Ok(entries) = std::fs::read_dir(&root) {
+            for e in entries.flatten() {
+                dirs.push(e.path());
+            }
+        }
+    }
+    dirs
+}
+
+/// 检测系统层面是否已存在 dsh（PATH 上的 `dsh` 命令 / npm npx 缓存），
+/// 返回找到的版本号。应用自身托管目录的检查见 [`installed_version`]。
+/// 用途：电脑上已有 dsh 时不再误报「未安装」。
+pub fn system_dsh_version() -> Option<String> {
+    // 1) PATH 上的 dsh 命令（全局安装等）
+    if let Some(dsh) = find_on_path("dsh") {
+        if let Ok((code, out)) = run_capture(&dsh, &["--version"], None) {
+            let v = out.trim().to_string();
+            if code == 0 && looks_like_version(&v) {
+                return Some(v);
+            }
+        }
+    }
+    // 2) npm npx 缓存中的 @deepseek-ai/dsh
+    for dir in npx_cache_dirs() {
+        let pkg = dir.join("node_modules/@deepseek-ai/dsh/package.json");
+        if let Ok(text) = std::fs::read_to_string(&pkg) {
+            if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
+                if let Some(ver) = v.get("version").and_then(|x| x.as_str()) {
+                    return Some(ver.to_string());
+                }
+            }
+        }
+    }
+    None
+}
+
 pub fn dsh_bin(app: &AppHandle) -> Option<PathBuf> {
     let p = runtime_dir(app).join(DSH_BIN_REL);
     p.is_file().then_some(p)

@@ -61,6 +61,7 @@ const zh = {
   "card.cp.localhost": "● 仅 127.0.0.1",
   "card.cp.unbound": "● 未绑定",
   "card.notInstalled": "未安装",
+  "card.systemVersion": "系统 v{v}（未托管）",
   "card.noNode": "未检测到 Node",
   "card.externalProcess": "外部进程",
 
@@ -135,6 +136,7 @@ const zh = {
   "wiz.installingNode": "安装中…",
   "wiz.dshInstalled": "✓ 已安装 v{v}",
   "wiz.dshMissing": "✗ 未安装",
+  "wiz.dshSystem": "✓ 系统已存在 v{v}（将安装独立托管副本）",
   "wiz.env.note": "安装 DSH 将通过 npm 下载依赖，可能需要几分钟；不影响你的全局 npm 环境。",
   "wiz.begin": "开始安装 DSH",
   "wiz.recheck": "重新检测",
@@ -200,6 +202,7 @@ const en: Record<MsgKey, string> = {
   "card.cp.localhost": "● 127.0.0.1 only",
   "card.cp.unbound": "● Not bound",
   "card.notInstalled": "Not installed",
+  "card.systemVersion": "System v{v} (unmanaged)",
   "card.noNode": "Node not detected",
   "card.externalProcess": "External process",
 
@@ -270,6 +273,7 @@ const en: Record<MsgKey, string> = {
   "wiz.installingNode": "Installing…",
   "wiz.dshInstalled": "✓ Installed v{v}",
   "wiz.dshMissing": "✗ Not installed",
+  "wiz.dshSystem": "✓ Found on system v{v} (an isolated managed copy will be installed)",
   "wiz.env.note": "Installing DSH downloads dependencies via npm and may take a few minutes; your global npm environment is untouched.",
   "wiz.begin": "Install DSH",
   "wiz.recheck": "Re-check",

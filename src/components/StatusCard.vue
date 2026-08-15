@@ -18,7 +18,11 @@ const d = computed(() => {
     external,
     port: s?.port ?? 3080,
     controlPort: s?.controlPort ?? null,
-    version: s?.installedVersion ? `v${s.installedVersion}` : t("card.notInstalled"),
+    version: s?.installedVersion
+      ? `v${s.installedVersion}`
+      : s?.systemDshVersion
+        ? t("card.systemVersion", { v: s.systemDshVersion })
+        : t("card.notInstalled"),
     node: s?.nodeVersion ?? null,
     pid: s?.pid ?? null,
     lastError: s?.lastError ?? null,

@@ -43,6 +43,7 @@ pub fn status_payload(app: &AppHandle) -> StatusPayload {
             .installed_version
             .clone()
             .or_else(|| runtime::installed_version(app)),
+        system_dsh_version: runtime::system_dsh_version(),
         uptime_ms: st.started_at.map(|t| t.elapsed().as_millis() as u64),
         last_error: st.last_error.clone(),
         control_port: control,

@@ -107,6 +107,9 @@ function skip() {
             <span v-else-if="info?.installedVersion" class="dv ok">
               {{ t("wiz.dshInstalled", { v: info.installedVersion }) }}
             </span>
+            <span v-else-if="info?.systemDshVersion" class="dv ok">
+              {{ t("wiz.dshSystem", { v: info.systemDshVersion }) }}
+            </span>
             <span v-else class="dv">{{ t("wiz.dshMissing") }}</span>
           </div>
         </div>
