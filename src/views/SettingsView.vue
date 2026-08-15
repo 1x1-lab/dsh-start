@@ -122,12 +122,7 @@ async function toggleAutostart(v: boolean) {
           <span class="sub">{{ t("set.dshVersion.sub") }}</span>
         </div>
         <span class="field">
-          <input
-            v-model="form.dshVersion"
-            type="text"
-            placeholder="latest"
-            style="width: 130px"
-          />
+          <input v-model="form.dshVersion" type="text" placeholder="latest" />
         </span>
       </div>
       <div class="btn-row">
@@ -207,9 +202,17 @@ async function toggleAutostart(v: boolean) {
 .field {
   margin-left: auto;
 }
-.field input {
-  width: 90px;
+/* 运行设置：语言 / 端口 / 版本输入框统一宽度 */
+.field input,
+.field select {
+  width: 120px;
+}
+.field input[type="number"] {
   text-align: right;
+}
+.field input[type="text"],
+.field select {
+  text-align: left;
 }
 .field select {
   background: #fff;
