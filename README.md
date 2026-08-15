@@ -6,6 +6,8 @@
 
 **简体中文** · [English](README.en.md)
 
+![DSH Start 界面](docs/assets/dsh-start.png)
+
 ## ✨ 功能亮点
 
 - 🚀 **一键安装 DSH**：首次运行向导检测环境，确认后把 `@deepseek-ai/dsh` 安装到应用托管目录（不污染全局 npm）；缺少 Node.js 时引导 winget / brew / apt 一键安装

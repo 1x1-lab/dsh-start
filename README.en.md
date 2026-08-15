@@ -6,6 +6,8 @@
 
 [简体中文](README.md) · **English**
 
+![DSH Start UI](docs/assets/dsh-start.png)
+
 ## ✨ Highlights
 
 - 🚀 **One-click DSH install**: first-run wizard checks the environment, then installs `@deepseek-ai/dsh` into an app-managed directory (your global npm stays clean); missing Node.js? Guided install via winget / brew / apt
