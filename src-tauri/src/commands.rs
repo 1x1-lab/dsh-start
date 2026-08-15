@@ -92,6 +92,11 @@ pub fn restart_dsh(app: AppHandle, reason: Option<String>) -> Result<(), String>
 }
 
 #[tauri::command]
+pub fn force_stop_external(app: AppHandle) -> Result<(), String> {
+    manager::force_stop_external(&app)
+}
+
+#[tauri::command]
 pub fn get_runtime_info(app: AppHandle) -> RuntimeInfo {
     let node = runtime::detect_node().ok();
     RuntimeInfo {

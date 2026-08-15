@@ -4,12 +4,15 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api";
 import { liveUptimeMs, store } from "../events";
 import { t } from "../i18n";
+import { showToast } from "../toast";
 import CallbackCard from "../components/CallbackCard.vue";
 import StatusCard from "../components/StatusCard.vue";
 
 const busy = ref<string | null>(null);
 const message = ref("");
 const latest = ref<string | null>(null);
+const armedStop = ref(false);
+let armTimer = 0;
 let ticker = 0;
 
 const running = computed(
@@ -62,6 +65,20 @@ async function openConsole() {
   const port = store.status?.port ?? 3080;
   await openUrl(`http://127.0.0.1:${port}`);
 }
+
+// 强制停止外部实例：第一次点击进入「确认」状态（3s 内再点才执行）
+async function onForceStop() {
+  if (!armedStop.value) {
+    armedStop.value = true;
+    window.clearTimeout(armTimer);
+    armTimer = window.setTimeout(() => (armedStop.value = false), 3000);
+    return;
+  }
+  armedStop.value = false;
+  window.clearTimeout(armTimer);
+  await run(() => api.forceStopExternal(), "stop");
+  if (!message.value) showToast(t("dash.forceStopDone"));
+}
 </script>
 
 <template>
@@ -70,6 +87,14 @@ async function openConsole() {
     <div class="action-row">
       <template v-if="external">
         <button class="btn primary" @click="openConsole">{{ t("dash.openConsole") }}</button>
+        <button
+          class="btn danger"
+          :class="{ armed: armedStop }"
+          :disabled="busy !== null"
+          @click="onForceStop"
+        >
+          {{ armedStop ? t("dash.confirmStop") : t("dash.forceStop") }}
+        </button>
       </template>
       <template v-else-if="running">
         <button class="btn primary" @click="openConsole">{{ t("dash.openConsole") }}</button>
@@ -132,6 +157,11 @@ async function openConsole() {
   margin: 0;
   color: var(--red);
   font-size: 12px;
+}
+.btn.danger.armed {
+  background: var(--red);
+  border-color: transparent;
+  color: #fff;
 }
 .hint {
   margin: 0;

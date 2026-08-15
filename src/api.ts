@@ -61,6 +61,7 @@ export const api = {
   startDsh: () => invoke<void>("start_dsh"),
   stopDsh: () => invoke<void>("stop_dsh"),
   restartDsh: (reason?: string) => invoke<void>("restart_dsh", { reason }),
+  forceStopExternal: () => invoke<void>("force_stop_external"),
   ensureRuntime: (version?: string) =>
     invoke<RuntimeInstallResult>("ensure_runtime", { version }),
   getRuntimeInfo: () => invoke<RuntimeInfo>("get_runtime_info"),

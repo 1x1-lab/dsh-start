@@ -487,6 +487,78 @@ fn force_kill(pid: u32) {
     }
 }
 
+/// 端口反查监听进程 PID（外部实例没有托管 pid，只能按端口找）。
+fn pid_on_port(port: u16) -> Option<u32> {
+    #[cfg(windows)]
+    {
+        // netstat 输出形如：TCP    127.0.0.1:3080    0.0.0.0:0    LISTENING    7148
+        let mut cmd = Command::new("netstat");
+        cmd.args(["-ano", "-p", "tcp"]);
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW：避免黑窗口闪现
+        let out = cmd.output().ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let needle = format!(":{port}");
+        for line in text.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 5
+                && parts[0].eq_ignore_ascii_case("tcp")
+                && parts[1].ends_with(&needle)
+                && parts[3].eq_ignore_ascii_case("listening")
+            {
+                return parts[4].parse().ok();
+            }
+        }
+        None
+    }
+    #[cfg(unix)]
+    {
+        // lsof -ti tcp:PORT 直接输出监听进程的 PID
+        let out = Command::new("lsof")
+            .args(["-ti", &format!("tcp:{port}")])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        text.lines().next().and_then(|l| l.trim().parse().ok())
+    }
+}
+
+/// 强制停止外部启动的 DSH 实例：按端口反查进程并结束其进程树。
+/// 结束后 watch_external 会在 ~1.5s 内探测到端口不再响应，把状态回落为 idle。
+pub fn force_stop_external(app: &AppHandle) -> Result<(), String> {
+    let port = app.state::<AppState>().settings.lock().unwrap().port;
+    let pid = pid_on_port(port)
+        .ok_or_else(|| format!("未找到监听 {port} 端口的进程（可能已停止）"))?;
+    log_event(
+        app,
+        "info",
+        &format!("强制停止外部 DSH 实例 (pid={pid}, port={port})"),
+    );
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let status = cmd.status().map_err(|e| format!("taskkill 失败: {e}"))?;
+        if !status.success() {
+            return Err(format!("taskkill 失败（exit={:?}）", status.code()));
+        }
+    }
+    #[cfg(unix)]
+    {
+        use nix::sys::signal::{kill, Signal};
+        use nix::unistd::Pid;
+        let _ = kill(Pid::from_raw(pid as i32), Signal::SIGTERM);
+        std::thread::sleep(Duration::from_millis(800));
+        let _ = kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
+    }
+    log_event(app, "info", "已发送强制停止，等待端口释放…");
+    Ok(())
+}
+
 fn tcp_probe(port: u16) -> bool {
     std::net::TcpStream::connect_timeout(
         &std::net::SocketAddr::from(([127, 0, 0, 1], port)),

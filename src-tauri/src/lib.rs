@@ -35,6 +35,7 @@ pub fn run() {
             commands::start_dsh,
             commands::stop_dsh,
             commands::restart_dsh,
+            commands::force_stop_external,
             commands::ensure_runtime,
             commands::get_runtime_info,
             commands::install_node_guided,
