@@ -51,6 +51,15 @@ onMounted(async () => {
   void checkAppUpdate(); // 已检查过则静默跳过
 });
 
+async function openDir() {
+  if (!runtimeDir.value) return;
+  try {
+    await openPath(runtimeDir.value);
+  } catch (e) {
+    showToast(String(e));
+  }
+}
+
 async function save() {
   message.value = "";
   // v-model.number 在清空时给出 ""，统一归一为 null（= 自动）
@@ -192,7 +201,7 @@ async function toggleAutostart(v: boolean) {
           <span>{{ t("about.dshLocation") }}</span>
           <span class="loc-row">
             <code class="loc">{{ runtimeDir || "—" }}</code>
-            <button v-if="runtimeDir" class="link" @click="openPath(runtimeDir)">
+            <button v-if="runtimeDir" class="link" @click="openDir">
               {{ t("about.openDir") }}
             </button>
           </span>
