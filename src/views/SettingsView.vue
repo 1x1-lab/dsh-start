@@ -191,7 +191,7 @@ async function toggleAutostart(v: boolean) {
         </div>
       </div>
       <div class="btn-row">
-        <button class="btn" :disabled="appUpdate.checking" @click="checkAppUpdate(true)">
+        <button class="btn" :disabled="appUpdate.checking" @click="checkAppUpdate(true, true)">
           {{ appUpdate.checking ? t("about.checking") : t("about.check") }}
         </button>
         <button v-if="updateAvailable()" class="btn primary" @click="openUrl(RELEASES_URL)">

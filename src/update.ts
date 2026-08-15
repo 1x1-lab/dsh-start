@@ -1,5 +1,8 @@
 import { reactive } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
+import { t } from "./i18n";
+import { showToast } from "./toast";
 
 /** 应用仓库（DSH-start 自身的 GitHub 仓库） */
 export const REPO = "1x1-lab/dsh-start";
@@ -35,12 +38,29 @@ export function updateAvailable(): boolean {
   );
 }
 
+/** 检查完成后按结果弹居中 toast（notify=true 时）：新版本可点击直达 Release 页 */
+function toastResult() {
+  if (appUpdate.failed) {
+    showToast(t("about.checkFailed"));
+  } else if (updateAvailable()) {
+    showToast(
+      t("about.newVersion", { v: appUpdate.latest ?? "" }),
+      6000,
+      () => openUrl(RELEASES_URL),
+    );
+  } else {
+    showToast(t("about.upToDate"));
+  }
+}
+
 /**
  * 查询 GitHub 最新 release（tag_name）并与本应用版本比对。
  * - 仓库尚无 release（404）→ 视为已是最新，checked=true
  * - 网络/限流等其他错误 → failed=true，UI 提示可重试
+ * @param force 忽略已检查过的缓存，强制重新查询
+ * @param notify 完成后用居中 toast 反馈结果
  */
-export async function checkAppUpdate(force = false): Promise<void> {
+export async function checkAppUpdate(force = false, notify = false): Promise<void> {
   if (appUpdate.checking || (appUpdate.checked && !force)) return;
   appUpdate.checking = true;
   appUpdate.failed = false;
@@ -65,5 +85,6 @@ export async function checkAppUpdate(force = false): Promise<void> {
     appUpdate.failed = true;
   } finally {
     appUpdate.checking = false;
+    if (notify) toastResult();
   }
 }

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -8,7 +8,7 @@ import logoUrl from "./assets/deepseek.svg";
 import { bindEvents, setStatus, store } from "./events";
 import { setLocale, t } from "./i18n";
 import { statusText } from "./labels";
-import { showToast, toast } from "./toast";
+import { toast } from "./toast";
 import { RELEASES_URL, appUpdate, checkAppUpdate, updateAvailable } from "./update";
 import Dashboard from "./views/Dashboard.vue";
 import LogsView from "./views/LogsView.vue";
@@ -85,7 +85,7 @@ onMounted(async () => {
   } catch {
     /* 版本号取不到就留空 */
   }
-  void checkAppUpdate(); // 应用自身版本更新检查（GitHub latest release）
+  void checkAppUpdate(false, true); // 应用自身版本更新检查（结果用居中 toast 反馈）
   try {
     setStatus(await api.getStatus());
   } catch {
@@ -98,20 +98,6 @@ onMounted(async () => {
     /* ignore */
   }
 });
-
-// 发现新版本 → 屏幕居中 toast 提示，点击直达 Release 页
-watch(
-  () => updateAvailable(),
-  (v) => {
-    if (v) {
-      showToast(
-        t("about.newVersion", { v: appUpdate.latest ?? "" }),
-        6000,
-        () => openUrl(RELEASES_URL),
-      );
-    }
-  },
-);
 </script>
 
 <template>
