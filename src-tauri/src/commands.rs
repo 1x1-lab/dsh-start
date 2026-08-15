@@ -390,3 +390,9 @@ pub fn open_log_file(app: AppHandle) -> Result<(), String> {
         .join("dsh-start.log");
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
+
+/// 用系统默认方式打开一个目录/路径（Rust 侧调用，不受前端 ACL 权限限制）。
+#[tauri::command]
+pub fn open_dir(path: String) -> Result<(), String> {
+    tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| e.to_string())
+}

@@ -50,6 +50,7 @@ pub fn run() {
             commands::get_logs,
             commands::get_callback_info,
             commands::open_log_file,
+            commands::open_dir,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

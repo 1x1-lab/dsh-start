@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
-import { openPath, openUrl } from "@tauri-apps/plugin-opener";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, type Settings } from "../api";
 import { store } from "../events";
 import { LOCALES, setLocale, t } from "../i18n";
@@ -54,7 +54,7 @@ onMounted(async () => {
 async function openDir() {
   if (!runtimeDir.value) return;
   try {
-    await openPath(runtimeDir.value);
+    await api.openDir(runtimeDir.value);
   } catch (e) {
     showToast(String(e));
   }

@@ -85,4 +85,5 @@ export const api = {
   getLogs: (limit?: number) => invoke<LogLine[]>("get_logs", { limit }),
   getCallbackInfo: () => invoke<CallbackInfo>("get_callback_info"),
   openLogFile: () => invoke<void>("open_log_file"),
+  openDir: (path: string) => invoke<void>("open_dir", { path }),
 };
