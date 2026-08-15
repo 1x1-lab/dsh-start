@@ -79,3 +79,8 @@ GitHub Actions 三平台构建（`.github/workflows/build.yml`）：push 跑 CI�
 - 控制端点仅绑定 `127.0.0.1`，CORS 仅放行 `http://127.0.0.1:<DSH端口>` / `http://localhost:<DSH端口>`
 - 控制端点 v1 无鉴权，只提供 `status` 与 `restart` 两个动词
 - DSH 用户数据（默认 `~/.dsh`，由 `DSH_HOME` 决定）与本应用托管目录分离，本应用只管进程与安装
+
+## 📄 许可证
+
+本项目基于 [Apache License 2.0](LICENSE) 开源。
+DSH（DeepSeek Harness）及其相关包遵循其各自的开源许可。

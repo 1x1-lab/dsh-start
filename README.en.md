@@ -79,3 +79,8 @@ Artifacts: Windows NSIS installer, macOS dmg, Linux deb / AppImage.
 - The control endpoint binds `127.0.0.1` only; CORS allows just `http://127.0.0.1:<dsh-port>` / `http://localhost:<dsh-port>`
 - v1 has no auth and exposes only two verbs: `status` and `restart`
 - DSH user data (default `~/.dsh`, governed by `DSH_HOME`) lives apart from this app's managed directory — we only manage the process and installation
+
+## 📄 License
+
+This project is open-sourced under the [Apache License 2.0](LICENSE).
+DSH (DeepSeek Harness) and its packages are subject to their respective open-source licenses.

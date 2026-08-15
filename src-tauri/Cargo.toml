@@ -2,6 +2,7 @@
 name = "dsh-start"
 version = "0.1.0"
 description = "Auto-install and auto-start managed host for DSH (DeepSeek Harness)"
+license = "Apache-2.0"
 authors = ["dsh-start"]
 edition = "2021"
 
