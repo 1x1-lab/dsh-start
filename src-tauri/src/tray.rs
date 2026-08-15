@@ -110,7 +110,7 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
 
     let tray = TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().expect("window icon").clone())
-        .tooltip("DSH-start")
+        .tooltip("DSH Start")
         .menu(&menu)
         .show_menu_on_left_click(false)
         // 左键单击：可见且聚焦 → 最小化到托盘；否则唤出到前台
@@ -206,7 +206,7 @@ pub fn update(app: &AppHandle) {
     {
         let tray_guard = state.tray.lock().unwrap();
         if let Some(tray) = tray_guard.as_ref() {
-            let _ = tray.set_tooltip(Some(format!("DSH-start · DSH: {label}")));
+            let _ = tray.set_tooltip(Some(format!("DSH Start · DSH: {label}")));
         }
     }
     {

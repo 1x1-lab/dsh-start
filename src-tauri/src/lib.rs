@@ -63,7 +63,7 @@ pub fn run() {
             // global logger → app log ring
             let _ = log::set_boxed_logger(Box::new(logger::AppLogger(handle.clone())));
             log::set_max_level(log::LevelFilter::Info);
-            log::info!("DSH-start 启动 (v{})", env!("CARGO_PKG_VERSION"));
+            log::info!("DSH Start 启动 (v{})", env!("CARGO_PKG_VERSION"));
 
             let flags = cli::flags();
 

@@ -1,10 +1,12 @@
-# DSH-start 🐳
+# DSH Start 🐳
 
 > DSH（DeepSeek Harness）的自动安装与自启动托管桌面应用 · 跨平台 · 毛玻璃界面 · 中英双语
 
 **技术栈**: Tauri v2 (Rust) 🦀 + Vue 3 💚 + Vite ⚡ + TypeScript 🔷
 
 **简体中文** · [English](README.en.md)
+
+![DSH Start 界面](docs/assets/dsh-start.png)
 
 ## ✨ 功能亮点
 

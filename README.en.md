@@ -1,10 +1,12 @@
-# DSH-start 🐳
+# DSH Start 🐳
 
 > The auto-install & auto-start host for [DSH (DeepSeek Harness)](https://github.com/deepseek-ai/deepseek-harness) — cross-platform, acrylic UI, bilingual.
 
 **Stack**: Tauri v2 (Rust) 🦀 + Vue 3 💚 + Vite ⚡ + TypeScript 🔷
 
 [简体中文](README.md) · **English**
+
+![DSH Start UI](docs/assets/dsh-start.png)
 
 ## ✨ Highlights
 
