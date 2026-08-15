@@ -136,7 +136,13 @@ async function onForceStop() {
     <p v-if="message" class="msg">{{ message }}</p>
 
     <div class="grid-12">
-      <StatusCard :status="store.status" :uptime="uptime" />
+      <StatusCard
+        :status="store.status"
+        :uptime="uptime"
+        :update-available="hasUpdate"
+        :update-to="latest"
+        @update-click="doUpdate"
+      />
       <CallbackCard class="s12" />
     </div>
   </div>

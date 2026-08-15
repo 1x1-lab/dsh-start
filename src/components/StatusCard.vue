@@ -7,7 +7,11 @@ import { fmtClock } from "../labels";
 const props = defineProps<{
   status: StatusPayload | null;
   uptime: number | null;
+  /** 有可用新版本（registry 版本 > 已装/系统版本）时显示升级箭头 */
+  updateAvailable?: boolean;
+  updateTo?: string | null;
 }>();
+const emit = defineEmits<{ (e: "update-click"): void }>();
 
 const d = computed(() => {
   const s = props.status;
@@ -53,7 +57,17 @@ const d = computed(() => {
   </div>
   <div class="card stat s3">
     <label>{{ t("card.version") }}</label>
-    <b class="ver">{{ d.version }}</b>
+    <div class="ver-row">
+      <b class="ver">{{ d.version }}</b>
+      <button
+        v-if="updateAvailable"
+        class="up-arrow"
+        :title="t('dash.updateTo', { v: updateTo ?? '' })"
+        @click="emit('update-click')"
+      >
+        ⬆
+      </button>
+    </div>
     <em class="ind">{{ d.node ? `Node ${d.node}` : t("card.noNode") }}</em>
   </div>
   <div class="card stat s3">
@@ -78,10 +92,35 @@ const d = computed(() => {
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
 }
-/* 版本值（如「系统 v0.1.0-rc.6（未托管）」）较长，用小号字与其他信息协调 */
+/* 版本值（如「系统 v0.1.0-rc.6」）较长，用小号字与其他信息协调 */
 .stat b.ver {
   font-size: 13px;
   font-weight: 600;
+  margin-top: 0;
+}
+.ver-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 7px;
+  min-height: 20px;
+}
+.up-arrow {
+  flex: none;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  border: none;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  font-size: 11px;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+.up-arrow:hover {
+  filter: brightness(1.15);
 }
 .stat em {
   display: block;
