@@ -85,7 +85,7 @@ onMounted(async () => {
   } catch {
     /* 版本号取不到就留空 */
   }
-  void checkAppUpdate(false, true); // 应用自身版本更新检查（结果用居中 toast 反馈）
+  void checkAppUpdate(false, false); // 启动时静默检查：更新状态与徽标，不弹 toast
   try {
     setStatus(await api.getStatus());
   } catch {
