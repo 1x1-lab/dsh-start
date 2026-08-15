@@ -13,6 +13,8 @@ pub struct StatusPayload {
     pub pid: Option<u32>,
     pub port: u16,
     pub installed_version: Option<String>,
+    /// 系统层面（PATH 全局安装 / npm npx 缓存）存在的 dsh 版本；None = 未发现
+    pub system_dsh_version: Option<String>,
     pub uptime_ms: Option<u64>,
     pub last_error: Option<String>,
     pub control_port: Option<u16>,
@@ -28,6 +30,7 @@ pub struct RuntimeInfo {
     pub node_present: bool,
     pub node_version: Option<String>,
     pub installed_version: Option<String>,
+    pub system_dsh_version: Option<String>,
     pub runtime_dir: String,
 }
 
@@ -92,12 +95,35 @@ pub fn restart_dsh(app: AppHandle, reason: Option<String>) -> Result<(), String>
 }
 
 #[tauri::command]
+pub fn force_stop_external(app: AppHandle) -> Result<(), String> {
+    manager::force_stop_external(&app)
+}
+
+/// 升级系统（非托管）安装的 dsh：按它原本的方式原地升级
+/// （全局安装 → npm install -g；npx 缓存 → npx 刷新），不转为托管。
+#[tauri::command]
+pub async fn upgrade_system_dsh(app: AppHandle, version: Option<String>) -> Result<String, String> {
+    let v = version.unwrap_or_else(|| "latest".into());
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = runtime::upgrade_system_dsh(&app, &v);
+        match &result {
+            Ok(_) => manager::emit_status(&app),
+            Err(e) => crate::logger::log_event(&app, "error", &format!("系统 DSH 升级失败：{e}")),
+        }
+        result
+    })
+    .await
+    .map_err(|e| format!("系统 DSH 升级任务异常: {e}"))?
+}
+
+#[tauri::command]
 pub fn get_runtime_info(app: AppHandle) -> RuntimeInfo {
     let node = runtime::detect_node().ok();
     RuntimeInfo {
         node_present: node.is_some(),
         node_version: node.as_ref().map(|n| n.node_version.clone()),
         installed_version: runtime::installed_version(&app),
+        system_dsh_version: runtime::system_dsh_version(),
         runtime_dir: runtime::runtime_dir(&app).display().to_string(),
     }
 }
@@ -259,6 +285,20 @@ pub fn get_settings(app: AppHandle) -> Settings {
     app.state::<AppState>().settings.lock().unwrap().clone()
 }
 
+/// 持久化「首次向导已跳过/完成」，避免每次启动都弹出。
+#[tauri::command]
+pub fn dismiss_wizard(app: AppHandle) -> Result<(), String> {
+    {
+        let state = app.state::<AppState>();
+        let mut s = state.settings.lock().unwrap();
+        s.wizard_dismissed = true;
+    }
+    let settings = app.state::<AppState>().settings.lock().unwrap().clone();
+    settings::save(&app, &settings)?;
+    crate::logger::log_event(&app, "info", "首次向导已跳过（持久化）");
+    Ok(())
+}
+
 #[tauri::command]
 pub fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
     if settings.port == 0 {
@@ -348,5 +388,11 @@ pub fn open_log_file(app: AppHandle) -> Result<(), String> {
         .app_log_dir()
         .map_err(|e| e.to_string())?
         .join("dsh-start.log");
+    tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// 用系统默认方式打开一个目录/路径（Rust 侧调用，不受前端 ACL 权限限制）。
+#[tauri::command]
+pub fn open_dir(path: String) -> Result<(), String> {
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| e.to_string())
 }

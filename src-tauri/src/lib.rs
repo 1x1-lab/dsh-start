@@ -35,6 +35,8 @@ pub fn run() {
             commands::start_dsh,
             commands::stop_dsh,
             commands::restart_dsh,
+            commands::force_stop_external,
+            commands::upgrade_system_dsh,
             commands::ensure_runtime,
             commands::get_runtime_info,
             commands::install_node_guided,
@@ -42,11 +44,13 @@ pub fn run() {
             commands::check_update,
             commands::get_settings,
             commands::save_settings,
+            commands::dismiss_wizard,
             commands::set_autostart,
             commands::get_autostart,
             commands::get_logs,
             commands::get_callback_info,
             commands::open_log_file,
+            commands::open_dir,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

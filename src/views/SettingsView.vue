@@ -23,9 +23,12 @@ const form = reactive<Settings>({
   quitStopsDsh: true,
   registerCli: true,
   language: "zh",
+  wizardDismissed: false,
 });
 const message = ref("");
 const appVersion = ref("");
+const runtimeDir = ref("");
+const systemDshVersion = ref<string | null>(null);
 
 onMounted(async () => {
   try {
@@ -38,8 +41,24 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+  try {
+    const info = await api.getRuntimeInfo();
+    runtimeDir.value = info.runtimeDir;
+    systemDshVersion.value = info.systemDshVersion;
+  } catch {
+    /* ignore */
+  }
   void checkAppUpdate(); // 已检查过则静默跳过
 });
+
+async function openDir() {
+  if (!runtimeDir.value) return;
+  try {
+    await api.openDir(runtimeDir.value);
+  } catch (e) {
+    showToast(String(e));
+  }
+}
 
 async function save() {
   message.value = "";
@@ -170,7 +189,22 @@ async function toggleAutostart(v: boolean) {
         </div>
         <div class="aline">
           <span>{{ t("about.dshVersion") }}</span>
-          <b>{{ store.status?.installedVersion ? `v${store.status.installedVersion}` : "—" }}</b>
+          <b>{{
+            store.status?.installedVersion
+              ? `v${store.status.installedVersion}`
+              : systemDshVersion
+                ? t("card.systemVersion", { v: systemDshVersion })
+                : "—"
+          }}</b>
+        </div>
+        <div class="aline">
+          <span>{{ t("about.dshLocation") }}</span>
+          <span class="loc-row">
+            <code class="loc">{{ runtimeDir || "—" }}</code>
+            <button v-if="runtimeDir" class="link" @click="openDir">
+              {{ t("about.openDir") }}
+            </button>
+          </span>
         </div>
         <div class="aline">
           <span>{{ t("about.repo") }}</span>
@@ -268,6 +302,27 @@ async function toggleAutostart(v: boolean) {
 }
 .aline .link:hover {
   text-decoration: underline;
+}
+.loc-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  justify-content: flex-end;
+}
+.loc {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--text-dim);
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  max-width: 320px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  user-select: text;
 }
 .ok {
   color: var(--green);

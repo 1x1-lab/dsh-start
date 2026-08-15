@@ -18,6 +18,7 @@ pub struct TrayItems {
 struct TrayText {
     start: &'static str,
     stop: &'static str,
+    stop_external: &'static str,
     restart: &'static str,
     open: &'static str,
     open_web: &'static str,
@@ -30,6 +31,7 @@ fn tray_text(lang: &str) -> TrayText {
         "en" => TrayText {
             start: "Start DSH",
             stop: "Stop DSH",
+            stop_external: "Force Stop External",
             restart: "Restart DSH",
             open: "Open Console",
             open_web: "Open DSH in Browser",
@@ -39,6 +41,7 @@ fn tray_text(lang: &str) -> TrayText {
         _ => TrayText {
             start: "启动 DSH",
             stop: "停止 DSH",
+            stop_external: "强制停止外部实例",
             restart: "重启 DSH",
             open: "打开控制台",
             open_web: "在浏览器打开 DSH",
@@ -144,7 +147,16 @@ pub fn build(app: &AppHandle) -> tauri::Result<()> {
             "stop" => {
                 let a = app.clone();
                 std::thread::spawn(move || {
-                    let _ = manager::stop(&a);
+                    // 外部实例没有托管 pid：走按端口的强制停止
+                    let external = matches!(
+                        a.state::<AppState>().manager.lock().unwrap().status,
+                        DshStatus::ExternalRunning
+                    );
+                    if external {
+                        let _ = manager::force_stop_external(&a);
+                    } else {
+                        let _ = manager::stop(&a);
+                    }
                 });
             }
             "restart" => {
@@ -215,18 +227,23 @@ pub fn update(app: &AppHandle) {
             let _ = item.set_text(format!("{}{label}", text.status_prefix));
         }
     }
-    // 生命周期操作仅对托管实例有意义；外部实例只能看、不能管
+    // 生命周期操作仅对托管实例有意义；外部实例只读，但提供「强制停止」
     let (can_start, can_stop, can_restart, can_open) = match status {
         DshStatus::Running | DshStatus::Starting => (false, true, true, true),
-        DshStatus::ExternalRunning => (false, false, false, true),
+        DshStatus::ExternalRunning => (false, true, false, true),
         DshStatus::Installing | DshStatus::NodeMissing => (false, false, false, false),
         _ => (true, false, false, false),
+    };
+    let stop_label = if status == DshStatus::ExternalRunning {
+        text.stop_external
+    } else {
+        text.stop
     };
     let items_guard = state.tray_items.lock().unwrap();
     if let Some(items) = items_guard.as_ref() {
         // 每次 update 顺带刷文本，语言切换即时生效
         let _ = items.start.set_text(text.start);
-        let _ = items.stop.set_text(text.stop);
+        let _ = items.stop.set_text(stop_label);
         let _ = items.restart.set_text(text.restart);
         let _ = items.open.set_text(text.open);
         let _ = items.open_web.set_text(text.open_web);

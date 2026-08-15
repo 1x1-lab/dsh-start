@@ -4,23 +4,35 @@ import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api";
 import { liveUptimeMs, store } from "../events";
 import { t } from "../i18n";
+import { showToast } from "../toast";
 import CallbackCard from "../components/CallbackCard.vue";
 import StatusCard from "../components/StatusCard.vue";
 
 const busy = ref<string | null>(null);
 const message = ref("");
 const latest = ref<string | null>(null);
+const armedStop = ref(false);
+let armTimer = 0;
 let ticker = 0;
 
 const running = computed(
   () => store.status?.status === "running" || store.status?.status === "starting",
 );
 const external = computed(() => store.status?.status === "external");
-// 仅在 registry 上确有更新版本时才展示更新按钮（查询失败则保持隐藏）
-const hasUpdate = computed(() => {
-  const inst = store.status?.installedVersion;
-  return latest.value !== null && !!inst && latest.value !== inst;
-});
+/** 是否有托管副本（决定升级方式：托管=更新，非托管=安装托管副本） */
+const managed = computed(() => !!store.status?.installedVersion);
+/** 当前展示的版本：托管版本优先，否则系统版本 */
+const curVersion = computed(
+  () => store.status?.installedVersion ?? store.status?.systemDshVersion ?? null,
+);
+// 仅在 registry 上确有更新版本时才展示升级入口（查询失败则保持隐藏）
+const hasUpdate = computed(
+  () => latest.value !== null && !!curVersion.value && latest.value !== curVersion.value,
+);
+/** 升级入口文案：托管 → 更新到 vX；非托管 → 升级系统 DSH 到 vX */
+const updateLabel = computed(() =>
+  t(managed.value ? "dash.updateTo" : "dash.upgradeSystem", { v: latest.value ?? "" }),
+);
 const uptime = ref(liveUptimeMs());
 
 function tick() {
@@ -38,10 +50,19 @@ async function checkUpdate() {
 }
 onMounted(checkUpdate);
 
+// 升级需区分方式：
+// 托管副本 → update_dsh（停 → 装 → 恢复运行）；
+// 系统安装（非托管）→ 按原始方式原地升级（全局 npm install -g / npx 刷新），不转为托管
 async function doUpdate() {
   await run(async () => {
-    const v = await api.updateDsh();
-    latest.value = v; // 已更新到该版本 → 按钮隐藏
+    if (managed.value) {
+      const v = await api.updateDsh();
+      latest.value = v; // 已更新到该版本 → 入口隐藏
+    } else {
+      const v = await api.upgradeSystemDsh(latest.value ?? undefined);
+      latest.value = v;
+      showToast(t("dash.systemUpgraded", { v }));
+    }
   }, "update");
 }
 
@@ -62,6 +83,20 @@ async function openConsole() {
   const port = store.status?.port ?? 3080;
   await openUrl(`http://127.0.0.1:${port}`);
 }
+
+// 强制停止外部实例：第一次点击进入「确认」状态（3s 内再点才执行）
+async function onForceStop() {
+  if (!armedStop.value) {
+    armedStop.value = true;
+    window.clearTimeout(armTimer);
+    armTimer = window.setTimeout(() => (armedStop.value = false), 3000);
+    return;
+  }
+  armedStop.value = false;
+  window.clearTimeout(armTimer);
+  await run(() => api.forceStopExternal(), "stop");
+  if (!message.value) showToast(t("dash.forceStopDone"));
+}
 </script>
 
 <template>
@@ -70,6 +105,14 @@ async function openConsole() {
     <div class="action-row">
       <template v-if="external">
         <button class="btn primary" @click="openConsole">{{ t("dash.openConsole") }}</button>
+        <button
+          class="btn danger"
+          :class="{ armed: armedStop }"
+          :disabled="busy !== null"
+          @click="onForceStop"
+        >
+          {{ armedStop ? t("dash.confirmStop") : t("dash.forceStop") }}
+        </button>
       </template>
       <template v-else-if="running">
         <button class="btn primary" @click="openConsole">{{ t("dash.openConsole") }}</button>
@@ -102,7 +145,7 @@ async function openConsole() {
         :disabled="busy !== null"
         @click="doUpdate"
       >
-        {{ busy === "update" ? t("dash.updating") : t("dash.updateTo", { v: latest ?? "" }) }}
+        {{ busy === "update" ? t("dash.updating") : updateLabel }}
       </button>
     </div>
     <p v-if="external" class="hint">
@@ -111,7 +154,14 @@ async function openConsole() {
     <p v-if="message" class="msg">{{ message }}</p>
 
     <div class="grid-12">
-      <StatusCard :status="store.status" :uptime="uptime" />
+      <StatusCard
+        :status="store.status"
+        :uptime="uptime"
+        :update-available="hasUpdate"
+        :update-to="latest"
+        :update-label="updateLabel"
+        @update-click="doUpdate"
+      />
       <CallbackCard class="s12" />
     </div>
   </div>
@@ -132,6 +182,11 @@ async function openConsole() {
   margin: 0;
   color: var(--red);
   font-size: 12px;
+}
+.btn.danger.armed {
+  background: var(--red);
+  border-color: transparent;
+  color: #fff;
 }
 .hint {
   margin: 0;

@@ -24,6 +24,8 @@ pub struct Settings {
     pub register_cli: bool,
     /// UI / tray language: "zh" (default) or "en".
     pub language: String,
+    /// 首次使用向导已被用户跳过/完成（持久化，避免每次启动都弹）。
+    pub wizard_dismissed: bool,
 }
 
 impl Default for Settings {
@@ -36,6 +38,7 @@ impl Default for Settings {
             quit_stops_dsh: true,
             register_cli: true,
             language: "zh".to_string(),
+            wizard_dismissed: false,
         }
     }
 }
