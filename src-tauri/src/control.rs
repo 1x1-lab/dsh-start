@@ -1,7 +1,7 @@
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::atomic::Ordering;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use tauri::{AppHandle, Manager};
 
@@ -111,6 +111,7 @@ pub fn start(app: &AppHandle) -> Option<u16> {
 }
 
 fn handle(app: &AppHandle, mut stream: TcpStream) {
+    let start = Instant::now();
     let _ = stream.set_read_timeout(Some(Duration::from_secs(10)));
     let mut buf = Vec::with_capacity(2048);
     let mut tmp = [0u8; 2048];
@@ -137,7 +138,8 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
         if lower.starts_with("origin:") {
             origin = Some(line[7..].trim().to_string());
         } else if lower.starts_with("content-length:") {
-            content_length = line[14..].trim().parse().unwrap_or(0);
+            // "content-length:" 共 15 字符，从下标 15 起才是数值
+            content_length = line[15..].trim().parse().unwrap_or(0);
         }
         if line.is_empty() {
             break;
@@ -170,8 +172,11 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
     }
 
     let mut response = String::new();
+    let status_code: u16;
+    let mut note = String::new();
     match (method.as_str(), path.as_str()) {
         ("OPTIONS", _) => {
+            status_code = 204;
             response.push_str("HTTP/1.1 204 No Content\r\n");
             if cors_ok {
                 if let Some(o) = &origin {
@@ -184,6 +189,7 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
             );
         }
         ("GET", "/api/status") => {
+            status_code = 200;
             let payload = manager::status_payload(app);
             let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".into());
             response.push_str("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n");
@@ -199,6 +205,7 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
             ));
         }
         ("POST", "/api/restart") => {
+            status_code = 200;
             let reason = serde_json::from_str::<serde_json::Value>(&body)
                 .ok()
                 .and_then(|v| {
@@ -207,6 +214,7 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
                         .map(|s| s.to_string())
                 })
                 .unwrap_or_else(|| "http-callback".into());
+            note = format!(" reason=\"{reason}\"");
             let app2 = app.clone();
             std::thread::spawn(move || {
                 let _ = manager::restart(&app2, &reason);
@@ -225,6 +233,7 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
             ));
         }
         _ => {
+            status_code = 404;
             let json = r#"{"error":"not found"}"#;
             response.push_str("HTTP/1.1 404 Not Found\r\nContent-Type: application/json\r\n");
             if cors_ok {
@@ -241,4 +250,16 @@ fn handle(app: &AppHandle, mut stream: TcpStream) {
     }
     let _ = stream.write_all(response.as_bytes());
     let _ = stream.flush();
+
+    // 请求日志：方法 / 路径 / 状态码 / 可选原因 / 耗时（空请求（读超时）不记）
+    if !method.is_empty() {
+        crate::logger::log_event(
+            app,
+            "info",
+            &format!(
+                "[http] {method} {path} {status_code}{note} ({}ms)",
+                start.elapsed().as_millis()
+            ),
+        );
+    }
 }
