@@ -15,7 +15,7 @@
         "label": "main",
         "title": "DSH-start · DSH 托管控制台",
         "width": 750,
-        "height": 530,
+        "height": 560,
         "minWidth": 660,
         "minHeight": 500,
         "resizable": true,
