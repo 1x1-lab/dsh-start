@@ -88,20 +88,26 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
         *app.state::<AppState>().node_info.lock().unwrap() = Some(node_info);
     }
 
+    // 托管副本缺失时：优先直接用系统已安装的 dsh（npx 缓存），
+    // 只有托管和系统都没有时才自动安装托管副本。
     if runtime::installed_version(app).is_none() {
-        log_event(app, "info", "DSH 尚未安装，开始自动安装（npm install）…");
-        set_status(app, DshStatus::Installing);
-        let version = {
-            app.state::<AppState>().settings.lock().unwrap().dsh_version.clone()
-        };
-        let mut forward = runtime::forward_install_lines(app);
-        match runtime::install(app, &version, &mut forward) {
-            Ok(v) => {
-                log_event(app, "info", &format!("DSH 安装完成：v{v}"));
-            }
-            Err(e) => {
-                set_status(app, DshStatus::Error);
-                return Err(e);
+        if runtime::system_dsh_dir().is_some() {
+            log_event(app, "info", "托管副本缺失，直接使用系统已安装的 DSH");
+        } else {
+            log_event(app, "info", "DSH 尚未安装，开始自动安装（npm install）…");
+            set_status(app, DshStatus::Installing);
+            let version = {
+                app.state::<AppState>().settings.lock().unwrap().dsh_version.clone()
+            };
+            let mut forward = runtime::forward_install_lines(app);
+            match runtime::install(app, &version, &mut forward) {
+                Ok(v) => {
+                    log_event(app, "info", &format!("DSH 安装完成：v{v}"));
+                }
+                Err(e) => {
+                    set_status(app, DshStatus::Error);
+                    return Err(e);
+                }
             }
         }
     }
@@ -111,7 +117,15 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
 
 fn spawn(app: &AppHandle) -> Result<(), String> {
     let node_info = runtime::detect_node().map_err(|e| e)?;
-    let bin = runtime::dsh_bin(app).ok_or("DSH 未安装，请先完成安装")?;
+    // 优先托管副本，缺失时回退系统 dsh（npx 缓存）；cwd 用其 node_modules 所在目录
+    let (bin, cwd) = match (runtime::dsh_bin(app), runtime::system_dsh_dir()) {
+        (Some(b), _) => (b, runtime::runtime_dir(app)),
+        (None, Some((b, cwd))) => {
+            log_event(app, "info", "使用系统 dsh（npx 缓存）启动");
+            (b, cwd)
+        }
+        (None, None) => return Err("未找到 DSH（托管与系统均无，请先安装）".into()),
+    };
     let port = app.state::<AppState>().settings.lock().unwrap().port;
 
     if tcp_probe(port) {
@@ -136,7 +150,7 @@ fn spawn(app: &AppHandle) -> Result<(), String> {
         .arg("web")
         .arg("--port")
         .arg(port.to_string())
-        .current_dir(runtime::runtime_dir(app))
+        .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
