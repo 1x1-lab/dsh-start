@@ -100,6 +100,21 @@ const zh = {
   "set.err.portInvalid": "控制端口无效（1-65535）",
   "set.err.portSame": "控制端口不能与 DSH 端口相同",
 
+  // ===== 关于 / 版本更新 =====
+  "about.title": "关于",
+  "about.version": "应用版本",
+  "about.dshVersion": "DSH 版本",
+  "about.repo": "源码仓库",
+  "about.license": "许可证",
+  "about.tech": "技术栈",
+  "about.check": "检查更新",
+  "about.checking": "检查中…",
+  "about.upToDate": "✓ 已是最新版本",
+  "about.newVersion": "发现新版本 v{v}",
+  "about.openRelease": "打开 Release 页",
+  "about.checkFailed": "检查更新失败，请检查网络后重试",
+  "about.openRepo": "打开仓库",
+
   // ===== 日志 =====
   "logs.live": "实时日志 · {n} 条",
   "logs.open": "打开日志文件",
@@ -219,6 +234,20 @@ const en: Record<MsgKey, string> = {
     "DSH is installed by this app into an isolated runtime directory and never touches your global npm environment. Callback restart works over two channels — HTTP (POST /api/restart) and CLI (dsh-start restart); the control endpoint binds 127.0.0.1 only, with CORS restricted to the DSH web origin. Closing the window minimizes to tray; quit from the tray menu.",
   "set.err.portInvalid": "Invalid control port (1-65535)",
   "set.err.portSame": "Control port cannot equal the DSH port",
+
+  "about.title": "About",
+  "about.version": "App Version",
+  "about.dshVersion": "DSH Version",
+  "about.repo": "Repository",
+  "about.license": "License",
+  "about.tech": "Tech Stack",
+  "about.check": "Check for Updates",
+  "about.checking": "Checking…",
+  "about.upToDate": "✓ Up to date",
+  "about.newVersion": "New version v{v} available",
+  "about.openRelease": "Open Releases",
+  "about.checkFailed": "Update check failed — check your network and retry",
+  "about.openRepo": "Open Repository",
 
   "logs.live": "Live Logs · {n}",
   "logs.open": "Open Log File",

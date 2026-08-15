@@ -1,9 +1,18 @@
 <script setup lang="ts">
 import { onMounted, reactive, ref } from "vue";
+import { getVersion } from "@tauri-apps/api/app";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { api, type Settings } from "../api";
 import { store } from "../events";
 import { LOCALES, setLocale, t } from "../i18n";
 import { showToast } from "../toast";
+import {
+  REPO_URL,
+  RELEASES_URL,
+  appUpdate,
+  checkAppUpdate,
+  updateAvailable,
+} from "../update";
 import ToggleRow from "../components/ToggleRow.vue";
 
 const form = reactive<Settings>({
@@ -16,6 +25,7 @@ const form = reactive<Settings>({
   language: "zh",
 });
 const message = ref("");
+const appVersion = ref("");
 
 onMounted(async () => {
   try {
@@ -23,6 +33,12 @@ onMounted(async () => {
   } catch {
     /* ignore */
   }
+  try {
+    appVersion.value = await getVersion();
+  } catch {
+    /* ignore */
+  }
+  void checkAppUpdate(); // 已检查过则静默跳过
 });
 
 async function save() {
@@ -151,8 +167,45 @@ async function toggleAutostart(v: boolean) {
     </div>
 
     <div class="card s12">
-      <h3 class="card-title">{{ t("set.about") }}</h3>
-      <p class="note" style="margin: 0">{{ t("set.about.text") }}</p>
+      <h3 class="card-title">{{ t("about.title") }}</h3>
+      <div class="about-grid">
+        <div class="aline">
+          <span>{{ t("about.version") }}</span>
+          <b>v{{ appVersion }}</b>
+        </div>
+        <div class="aline">
+          <span>{{ t("about.dshVersion") }}</span>
+          <b>{{ store.status?.installedVersion ? `v${store.status.installedVersion}` : "—" }}</b>
+        </div>
+        <div class="aline">
+          <span>{{ t("about.repo") }}</span>
+          <button class="link" @click="openUrl(REPO_URL)">{{ REPO_URL.replace("https://", "") }}</button>
+        </div>
+        <div class="aline">
+          <span>{{ t("about.license") }}</span>
+          <b>Apache-2.0</b>
+        </div>
+        <div class="aline">
+          <span>{{ t("about.tech") }}</span>
+          <b>Tauri v2 · Vue 3 · Vite</b>
+        </div>
+      </div>
+      <div class="btn-row">
+        <button class="btn" :disabled="appUpdate.checking" @click="checkAppUpdate(true)">
+          {{ appUpdate.checking ? t("about.checking") : t("about.check") }}
+        </button>
+        <button v-if="updateAvailable()" class="btn primary" @click="openUrl(RELEASES_URL)">
+          {{ t("about.openRelease") }}
+        </button>
+      </div>
+      <p class="note" style="margin: 10px 0 0">
+        <span v-if="appUpdate.failed" class="err">{{ t("about.checkFailed") }}</span>
+        <span v-else-if="updateAvailable()" class="ok">
+          {{ t("about.newVersion", { v: appUpdate.latest ?? "" }) }}
+        </span>
+        <span v-else-if="appUpdate.checked" class="ok">{{ t("about.upToDate") }}</span>
+      </p>
+      <p class="note" style="margin: 10px 0 0">{{ t("set.about.text") }}</p>
     </div>
   </div>
 </template>
@@ -186,5 +239,41 @@ async function toggleAutostart(v: boolean) {
   color: var(--red);
   font-size: 12px;
   margin: 8px 0 0;
+}
+.about-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.aline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 13px;
+}
+.aline span {
+  color: var(--text-dim);
+}
+.aline b {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.aline .link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font-size: 13px;
+  cursor: pointer;
+}
+.aline .link:hover {
+  text-decoration: underline;
+}
+.ok {
+  color: var(--green);
+}
+.err {
+  color: var(--red);
 }
 </style>

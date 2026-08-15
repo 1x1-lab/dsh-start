@@ -5,6 +5,10 @@
   "type": "module",
   "description": "Auto-install and auto-start managed host for DSH (DeepSeek Harness). Cross-platform Tauri desktop app.",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/1x1-lab/dsh-start.git"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vue-tsc --noEmit && vite build",

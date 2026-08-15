@@ -2,12 +2,14 @@
 import { computed, onMounted, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "./api";
 import logoUrl from "./assets/deepseek.svg";
 import { bindEvents, setStatus, store } from "./events";
 import { setLocale, t } from "./i18n";
 import { statusText } from "./labels";
 import { toast } from "./toast";
+import { RELEASES_URL, appUpdate, checkAppUpdate, updateAvailable } from "./update";
 import Dashboard from "./views/Dashboard.vue";
 import LogsView from "./views/LogsView.vue";
 import SettingsView from "./views/SettingsView.vue";
@@ -83,6 +85,7 @@ onMounted(async () => {
   } catch {
     /* 版本号取不到就留空 */
   }
+  void checkAppUpdate(); // 应用自身版本更新检查（GitHub latest release）
   try {
     setStatus(await api.getStatus());
   } catch {
@@ -132,7 +135,17 @@ onMounted(async () => {
             <span class="ic">{{ item.icon }}</span>{{ item.label }}
           </div>
         </template>
-        <div v-if="appVersion" class="ver">v{{ appVersion }}</div>
+        <div v-if="appVersion" class="ver">
+          <span>v{{ appVersion }}</span>
+          <button
+            v-if="updateAvailable()"
+            class="up-badge"
+            :title="`New version v${appUpdate.latest ?? ''}`"
+            @click="openUrl(RELEASES_URL)"
+          >
+            ⬆ v{{ appUpdate.latest }}
+          </button>
+        </div>
       </aside>
 
       <!-- 第 2 层：模块层 -->
@@ -281,10 +294,26 @@ onMounted(async () => {
 .ver {
   margin-top: auto;
   padding-top: 8px;
-  text-align: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   font-size: 11px;
   color: var(--text-faint);
   font-variant-numeric: tabular-nums;
+}
+.up-badge {
+  background: linear-gradient(135deg, var(--accent), var(--accent-2));
+  color: #fff;
+  border: none;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 10.5px;
+  cursor: pointer;
+  transition: filter 0.12s;
+}
+.up-badge:hover {
+  filter: brightness(1.12);
 }
 
 /* ===== 第 2 层：模块层 ===== */
