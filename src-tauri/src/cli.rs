@@ -89,10 +89,14 @@ pub fn unregister(app: &AppHandle) {
 
 #[cfg(windows)]
 fn get_user_path() -> Option<String> {
-    let out = std::process::Command::new("reg")
-        .args(["query", "HKCU\\Environment", "/v", "Path"])
-        .output()
-        .ok()?;
+    let mut cmd = std::process::Command::new("reg");
+    cmd.args(["query", "HKCU\\Environment", "/v", "Path"]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW：避免黑窗口闪现
+    }
+    let out = cmd.output().ok()?;
     let text = String::from_utf8_lossy(&out.stdout).into_owned();
     for line in text.lines() {
         let t = line.trim();
@@ -108,20 +112,24 @@ fn get_user_path() -> Option<String> {
 
 #[cfg(windows)]
 fn set_user_path(value: &str) -> Result<(), String> {
-    let status = std::process::Command::new("reg")
-        .args([
-            "add",
-            "HKCU\\Environment",
-            "/v",
-            "Path",
-            "/t",
-            "REG_EXPAND_SZ",
-            "/d",
-            value,
-            "/f",
-        ])
-        .status()
-        .map_err(|e| e.to_string())?;
+    let mut cmd = std::process::Command::new("reg");
+    cmd.args([
+        "add",
+        "HKCU\\Environment",
+        "/v",
+        "Path",
+        "/t",
+        "REG_EXPAND_SZ",
+        "/d",
+        value,
+        "/f",
+    ]);
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW：避免黑窗口闪现
+    }
+    let status = cmd.status().map_err(|e| e.to_string())?;
     if status.success() {
         Ok(())
     } else {
