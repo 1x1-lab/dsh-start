@@ -53,7 +53,7 @@ const d = computed(() => {
   </div>
   <div class="card stat s3">
     <label>{{ t("card.version") }}</label>
-    <b>{{ d.version }}</b>
+    <b class="ver">{{ d.version }}</b>
     <em class="ind">{{ d.node ? `Node ${d.node}` : t("card.noNode") }}</em>
   </div>
   <div class="card stat s3">
@@ -77,6 +77,11 @@ const d = computed(() => {
   font-weight: 600;
   letter-spacing: -0.01em;
   font-variant-numeric: tabular-nums;
+}
+/* 版本值（如「系统 v0.1.0-rc.6（未托管）」）较长，用小号字与其他信息协调 */
+.stat b.ver {
+  font-size: 13px;
+  font-weight: 600;
 }
 .stat em {
   display: block;
