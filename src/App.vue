@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -8,7 +8,7 @@ import logoUrl from "./assets/deepseek.svg";
 import { bindEvents, setStatus, store } from "./events";
 import { setLocale, t } from "./i18n";
 import { statusText } from "./labels";
-import { toast } from "./toast";
+import { showToast, toast } from "./toast";
 import { RELEASES_URL, appUpdate, checkAppUpdate, updateAvailable } from "./update";
 import Dashboard from "./views/Dashboard.vue";
 import LogsView from "./views/LogsView.vue";
@@ -98,6 +98,20 @@ onMounted(async () => {
     /* ignore */
   }
 });
+
+// 发现新版本 → 屏幕居中 toast 提示，点击直达 Release 页
+watch(
+  () => updateAvailable(),
+  (v) => {
+    if (v) {
+      showToast(
+        t("about.newVersion", { v: appUpdate.latest ?? "" }),
+        6000,
+        () => openUrl(RELEASES_URL),
+      );
+    }
+  },
+);
 </script>
 
 <template>
@@ -172,8 +186,15 @@ onMounted(async () => {
 
     <SetupWizard v-if="showWizard" />
 
-    <!-- 全局轻提示 -->
-    <div v-if="toast.text" class="toast">{{ toast.text }}</div>
+    <!-- 全局轻提示（屏幕居中；带 action 时可点击） -->
+    <div
+      v-if="toast.text"
+      class="toast"
+      :class="{ act: !!toast.action }"
+      @click="toast.action?.()"
+    >
+      {{ toast.text }}
+    </div>
   </div>
 </template>
 
@@ -432,27 +453,36 @@ onMounted(async () => {
   padding: 16px 20px 20px;
 }
 
-/* ===== 全局轻提示 ===== */
+/* ===== 全局轻提示（屏幕居中） ===== */
 .toast {
   position: fixed;
-  top: 48px;
+  top: 50%;
   left: 50%;
-  transform: translateX(-50%);
+  transform: translate(-50%, -50%);
   z-index: 100;
   background: rgba(28, 30, 36, 0.92);
   color: #fff;
-  font-size: 12px;
+  font-size: 12.5px;
   font-weight: 550;
-  padding: 8px 18px;
+  padding: 10px 20px;
   border-radius: 999px;
-  box-shadow: 0 8px 24px rgba(20, 24, 40, 0.25);
+  box-shadow: 0 10px 28px rgba(20, 24, 40, 0.28);
   animation: toast-in 0.18s ease;
   pointer-events: none;
+  white-space: nowrap;
+}
+.toast.act {
+  pointer-events: auto;
+  cursor: pointer;
+  background: rgba(28, 30, 36, 0.96);
+}
+.toast.act:hover {
+  filter: brightness(1.15);
 }
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translateX(-50%) translateY(-6px);
+    transform: translate(-50%, -50%) translateY(-8px);
   }
 }
 </style>
