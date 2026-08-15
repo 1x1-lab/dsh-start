@@ -1,4 +1,4 @@
-# DSH-start 🐳
+# DSH Start 🐳
 
 > The auto-install & auto-start host for [DSH (DeepSeek Harness)](https://github.com/deepseek-ai/deepseek-harness) — cross-platform, acrylic UI, bilingual.
 

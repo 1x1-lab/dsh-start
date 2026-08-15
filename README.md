@@ -1,4 +1,4 @@
-# DSH-start 🐳
+# DSH Start 🐳
 
 > DSH（DeepSeek Harness）的自动安装与自启动托管桌面应用 · 跨平台 · 毛玻璃界面 · 中英双语
 

@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "dsh-start",
+  "productName": "DSH Start",
   "version": "0.1.0",
   "identifier": "com.dshstart.app",
   "build": {
@@ -13,7 +13,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "DSH-start · DSH 托管控制台",
+        "title": "DSH Start · DSH 托管控制台",
         "width": 750,
         "height": 560,
         "minWidth": 660,
