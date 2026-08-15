@@ -198,13 +198,6 @@ async function toggleAutostart(v: boolean) {
           {{ t("about.openRelease") }}
         </button>
       </div>
-      <p class="note" style="margin: 10px 0 0">
-        <span v-if="appUpdate.failed" class="err">{{ t("about.checkFailed") }}</span>
-        <span v-else-if="updateAvailable()" class="ok">
-          {{ t("about.newVersion", { v: appUpdate.latest ?? "" }) }}
-        </span>
-        <span v-else-if="appUpdate.checked" class="ok">{{ t("about.upToDate") }}</span>
-      </p>
       <p class="note" style="margin: 10px 0 0">{{ t("set.about.text") }}</p>
     </div>
   </div>

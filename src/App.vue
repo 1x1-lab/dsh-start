@@ -172,7 +172,7 @@ onMounted(async () => {
 
     <SetupWizard v-if="showWizard" />
 
-    <!-- 全局轻提示（屏幕居中；带 action 时可点击） -->
+    <!-- 全局轻提示（顶部居中；带 action 时可点击） -->
     <div
       v-if="toast.text"
       class="toast"
@@ -439,12 +439,12 @@ onMounted(async () => {
   padding: 16px 20px 20px;
 }
 
-/* ===== 全局轻提示（屏幕居中） ===== */
+/* ===== 全局轻提示（顶部居中） ===== */
 .toast {
   position: fixed;
-  top: 50%;
+  top: 48px;
   left: 50%;
-  transform: translate(-50%, -50%);
+  transform: translateX(-50%);
   z-index: 100;
   background: rgba(28, 30, 36, 0.92);
   color: #fff;
@@ -468,7 +468,7 @@ onMounted(async () => {
 @keyframes toast-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -50%) translateY(-8px);
+    transform: translateX(-50%) translateY(-6px);
   }
 }
 </style>
