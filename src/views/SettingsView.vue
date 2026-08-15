@@ -190,7 +190,7 @@ async function toggleAutostart(v: boolean) {
           <b>Tauri v2 · Vue 3 · Vite</b>
         </div>
       </div>
-      <div class="btn-row">
+      <div class="btn-row center">
         <button class="btn" :disabled="appUpdate.checking" @click="checkAppUpdate(true, true)">
           {{ appUpdate.checking ? t("about.checking") : t("about.check") }}
         </button>
@@ -227,6 +227,9 @@ async function toggleAutostart(v: boolean) {
   justify-content: flex-end;
   gap: 12px;
   margin-top: 14px;
+}
+.btn-row.center {
+  justify-content: center;
 }
 .msg {
   color: var(--red);
