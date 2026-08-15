@@ -34,12 +34,16 @@ function onTitlebarDown(e: MouseEvent) {
 type Tab = "console" | "logs" | "settings";
 const tab = ref<Tab>("console");
 
-const showWizard = computed(
-  () =>
-    !store.wizardDismissed &&
-    !!store.status &&
-    (!store.status.nodePresent || !store.status.installedVersion),
-);
+const showWizard = computed(() => {
+  const s = store.status;
+  if (!s) return false;
+  // 缺 Node.js 必须引导（忽略跳过标记）
+  if (!s.nodePresent) return true;
+  // 已跳过/完成向导，或系统/托管已有 dsh → 不再弹
+  return (
+    !store.wizardDismissed && !s.installedVersion && !s.systemDshVersion
+  );
+});
 
 const pill = computed(() => {
   const s = store.status?.status ?? "unknown";
@@ -76,7 +80,9 @@ const appVersion = ref("");
 onMounted(async () => {
   await bindEvents();
   try {
-    setLocale((await api.getSettings()).language);
+    const settings = await api.getSettings();
+    setLocale(settings.language);
+    store.wizardDismissed = settings.wizardDismissed;
   } catch {
     /* 默认中文 */
   }

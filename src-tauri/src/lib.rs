@@ -43,6 +43,7 @@ pub fn run() {
             commands::check_update,
             commands::get_settings,
             commands::save_settings,
+            commands::dismiss_wizard,
             commands::set_autostart,
             commands::get_autostart,
             commands::get_logs,

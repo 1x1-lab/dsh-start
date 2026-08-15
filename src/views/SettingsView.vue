@@ -23,6 +23,7 @@ const form = reactive<Settings>({
   quitStopsDsh: true,
   registerCli: true,
   language: "zh",
+  wizardDismissed: false,
 });
 const message = ref("");
 const appVersion = ref("");

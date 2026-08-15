@@ -45,6 +45,8 @@ export interface Settings {
   registerCli: boolean;
   /** 界面语言：zh / en */
   language: string;
+  /** 首次向导已跳过/完成（持久化） */
+  wizardDismissed: boolean;
 }
 
 export interface LogLine {
@@ -74,6 +76,7 @@ export const api = {
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) =>
     invoke<void>("save_settings", { settings }),
+  dismissWizard: () => invoke<void>("dismiss_wizard"),
   setAutostart: (enabled: boolean) =>
     invoke<boolean>("set_autostart", { enabled }),
   getAutostart: () => invoke<boolean>("get_autostart"),

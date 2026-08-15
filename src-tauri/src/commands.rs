@@ -268,6 +268,20 @@ pub fn get_settings(app: AppHandle) -> Settings {
     app.state::<AppState>().settings.lock().unwrap().clone()
 }
 
+/// 持久化「首次向导已跳过/完成」，避免每次启动都弹出。
+#[tauri::command]
+pub fn dismiss_wizard(app: AppHandle) -> Result<(), String> {
+    {
+        let state = app.state::<AppState>();
+        let mut s = state.settings.lock().unwrap();
+        s.wizard_dismissed = true;
+    }
+    let settings = app.state::<AppState>().settings.lock().unwrap().clone();
+    settings::save(&app, &settings)?;
+    crate::logger::log_event(&app, "info", "首次向导已跳过（持久化）");
+    Ok(())
+}
+
 #[tauri::command]
 pub fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
     if settings.port == 0 {

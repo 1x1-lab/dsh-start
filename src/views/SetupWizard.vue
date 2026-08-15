@@ -67,10 +67,16 @@ async function finish() {
     }
   }
   store.wizardDismissed = true;
+  try {
+    await api.dismissWizard(); // 持久化：下次启动不再弹
+  } catch {
+    /* 忽略 */
+  }
 }
 
 function skip() {
   store.wizardDismissed = true;
+  void api.dismissWizard().catch(() => {}); // 持久化：下次启动不再弹
 }
 </script>
 
