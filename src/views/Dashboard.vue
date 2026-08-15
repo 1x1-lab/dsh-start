@@ -29,9 +29,9 @@ const curVersion = computed(
 const hasUpdate = computed(
   () => latest.value !== null && !!curVersion.value && latest.value !== curVersion.value,
 );
-/** 升级入口文案：托管 → 更新到 vX；非托管 → 安装托管副本 vX */
+/** 升级入口文案：托管 → 更新到 vX；非托管 → 升级系统 DSH 到 vX */
 const updateLabel = computed(() =>
-  t(managed.value ? "dash.updateTo" : "dash.adoptNew", { v: latest.value ?? "" }),
+  t(managed.value ? "dash.updateTo" : "dash.upgradeSystem", { v: latest.value ?? "" }),
 );
 const uptime = ref(liveUptimeMs());
 
@@ -52,16 +52,16 @@ onMounted(checkUpdate);
 
 // 升级需区分方式：
 // 托管副本 → update_dsh（停 → 装 → 恢复运行）；
-// 系统安装（非托管）→ 安装托管副本 vX，转为本应用托管（不动系统安装）
+// 系统安装（非托管）→ 按原始方式原地升级（全局 npm install -g / npx 刷新），不转为托管
 async function doUpdate() {
   await run(async () => {
     if (managed.value) {
       const v = await api.updateDsh();
       latest.value = v; // 已更新到该版本 → 入口隐藏
     } else {
-      const res = await api.ensureRuntime(latest.value ?? undefined);
-      latest.value = res.version;
-      showToast(t("dash.managedInstalled", { v: res.version }));
+      const v = await api.upgradeSystemDsh(latest.value ?? undefined);
+      latest.value = v;
+      showToast(t("dash.systemUpgraded", { v }));
     }
   }, "update");
 }

@@ -146,31 +146,130 @@ fn npx_cache_dirs() -> Vec<PathBuf> {
     dirs
 }
 
+/// 按 . / - 分段比较版本号；a>b 返回 Greater。
+fn cmp_ver(a: &str, b: &str) -> std::cmp::Ordering {
+    let pa: Vec<u32> = a
+        .split(|c: char| c == '.' || c == '-')
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    let pb: Vec<u32> = b
+        .split(|c: char| c == '.' || c == '-')
+        .filter_map(|s| s.parse().ok())
+        .collect();
+    for i in 0..pa.len().max(pb.len()) {
+        let x = pa.get(i).copied().unwrap_or(0);
+        let y = pb.get(i).copied().unwrap_or(0);
+        if x != y {
+            return x.cmp(&y);
+        }
+    }
+    std::cmp::Ordering::Equal
+}
+
 /// 检测系统层面是否已存在 dsh（PATH 上的 `dsh` 命令 / npm npx 缓存），
-/// 返回找到的版本号。应用自身托管目录的检查见 [`installed_version`]。
+/// 返回找到的最高版本号。应用自身托管目录的检查见 [`installed_version`]。
 /// 用途：电脑上已有 dsh 时不再误报「未安装」。
 pub fn system_dsh_version() -> Option<String> {
+    let mut found: Vec<String> = Vec::new();
     // 1) PATH 上的 dsh 命令（全局安装等）
     if let Some(dsh) = find_on_path("dsh") {
         if let Ok((code, out)) = run_capture(&dsh, &["--version"], None) {
             let v = out.trim().to_string();
             if code == 0 && looks_like_version(&v) {
-                return Some(v);
+                found.push(v);
             }
         }
     }
-    // 2) npm npx 缓存中的 @deepseek-ai/dsh
+    // 2) npm npx 缓存中的 @deepseek-ai/dsh（可能多份，取最高版本）
     for dir in npx_cache_dirs() {
         let pkg = dir.join("node_modules/@deepseek-ai/dsh/package.json");
         if let Ok(text) = std::fs::read_to_string(&pkg) {
             if let Ok(v) = serde_json::from_str::<serde_json::Value>(&text) {
                 if let Some(ver) = v.get("version").and_then(|x| x.as_str()) {
-                    return Some(ver.to_string());
+                    found.push(ver.to_string());
                 }
             }
         }
     }
-    None
+    found.into_iter().max_by(|a, b| cmp_ver(a, b))
+}
+
+/// 升级系统（非托管）安装的 dsh，按它原本的安装方式原地升级：
+/// - PATH 上的全局安装 → `npm install -g @deepseek-ai/dsh@<version>`
+/// - npx 缓存 → `npx --yes @deepseek-ai/dsh@<version> --version` 刷新缓存
+/// 返回升级后的版本号。不会把系统安装转换为托管副本。
+pub fn upgrade_system_dsh(app: &AppHandle, version: &str) -> Result<String, String> {
+    let node_info = detect_node()?;
+    let spec = format!("{}@{}", DSH_PACKAGE, version);
+    let mut forward = forward_install_lines(app);
+
+    if let Some(dsh) = find_on_path("dsh") {
+        // 全局安装：npm install -g
+        crate::logger::log_event(
+            app,
+            "info",
+            &format!("升级系统 DSH（全局安装）到 {version}…"),
+        );
+        let args = [
+            "install",
+            "-g",
+            &spec,
+            "--no-audit",
+            "--no-fund",
+            "--color=false",
+        ];
+        let status = if let Some(cli) = &node_info.npm_cli {
+            let mut cmd = Command::new(&node_info.node);
+            cmd.arg(cli).args(args);
+            run_cmd_streaming(&mut cmd, &mut forward)?
+        } else if cfg!(windows) {
+            let npm = find_on_path("npm").ok_or("未检测到 npm")?;
+            let mut cmd = Command::new("cmd");
+            cmd.arg("/C")
+                .arg(format!("\"{}\"", npm.display()))
+                .args(args);
+            run_cmd_streaming(&mut cmd, &mut forward)?
+        } else {
+            let npm = find_on_path("npm").ok_or("未检测到 npm")?;
+            let mut cmd = Command::new(npm);
+            cmd.args(args);
+            run_cmd_streaming(&mut cmd, &mut forward)?
+        };
+        if !status.success() {
+            return Err(format!("npm install -g 失败（exit={:?}）", status.code()));
+        }
+        // 升级后读回全局版本
+        let (code, out) = run_capture(&dsh, &["--version"], None)?;
+        let v = out.trim().to_string();
+        if code == 0 && looks_like_version(&v) {
+            return Ok(v);
+        }
+        return Err("升级完成但未从全局 dsh 读到版本号".into());
+    }
+
+    // npx 缓存：npx --yes @deepseek-ai/dsh@<v> --version 刷新到最新
+    crate::logger::log_event(
+        app,
+        "info",
+        &format!("升级系统 DSH（npx 缓存）到 {version}…"),
+    );
+    let npx = find_on_path("npx").ok_or("未检测到 npx")?;
+    let args = ["--yes", &spec, "--version"];
+    let status = if cfg!(windows) {
+        let mut cmd = Command::new("cmd");
+        cmd.arg("/C")
+            .arg(format!("\"{}\"", npx.display()))
+            .args(args);
+        run_cmd_streaming(&mut cmd, &mut forward)?
+    } else {
+        let mut cmd = Command::new(npx);
+        cmd.args(args);
+        run_cmd_streaming(&mut cmd, &mut forward)?
+    };
+    if !status.success() {
+        return Err(format!("npx 刷新失败（exit={:?}）", status.code()));
+    }
+    system_dsh_version().ok_or_else(|| "升级后未在系统检测到 DSH 版本号".into())
 }
 
 pub fn dsh_bin(app: &AppHandle) -> Option<PathBuf> {

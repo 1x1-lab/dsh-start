@@ -72,6 +72,8 @@ export const api = {
   getRuntimeInfo: () => invoke<RuntimeInfo>("get_runtime_info"),
   installNodeGuided: () => invoke<string>("install_node_guided"),
   updateDsh: () => invoke<string>("update_dsh"),
+  upgradeSystemDsh: (version?: string) =>
+    invoke<string>("upgrade_system_dsh", { version }),
   checkUpdate: () => invoke<UpdateCheck>("check_update"),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) =>

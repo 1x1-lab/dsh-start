@@ -99,6 +99,23 @@ pub fn force_stop_external(app: AppHandle) -> Result<(), String> {
     manager::force_stop_external(&app)
 }
 
+/// 升级系统（非托管）安装的 dsh：按它原本的方式原地升级
+/// （全局安装 → npm install -g；npx 缓存 → npx 刷新），不转为托管。
+#[tauri::command]
+pub async fn upgrade_system_dsh(app: AppHandle, version: Option<String>) -> Result<String, String> {
+    let v = version.unwrap_or_else(|| "latest".into());
+    tauri::async_runtime::spawn_blocking(move || {
+        let result = runtime::upgrade_system_dsh(&app, &v);
+        match &result {
+            Ok(_) => manager::emit_status(&app),
+            Err(e) => crate::logger::log_event(&app, "error", &format!("系统 DSH 升级失败：{e}")),
+        }
+        result
+    })
+    .await
+    .map_err(|e| format!("系统 DSH 升级任务异常: {e}"))?
+}
+
 #[tauri::command]
 pub fn get_runtime_info(app: AppHandle) -> RuntimeInfo {
     let node = runtime::detect_node().ok();
