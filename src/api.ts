@@ -21,6 +21,7 @@ export interface RuntimeInfo {
   nodeVersion: string | null;
   installedVersion: string | null;
   systemDshVersion: string | null;
+  systemDshLocation: string | null;
   runtimeDir: string;
 }
 

@@ -194,6 +194,33 @@ pub fn system_dsh_version() -> Option<String> {
     found.into_iter().max_by(|a, b| cmp_ver(a, b))
 }
 
+/// 从系统 npx 缓存中定位 dsh 可执行入口与运行目录（供托管缺失时直接使用）。
+/// 返回 (bin.js 路径, cwd=node_modules 所在缓存目录)。取最高版本的缓存。
+pub fn system_dsh_dir() -> Option<(PathBuf, PathBuf)> {
+    let mut best: Option<(String, PathBuf, PathBuf)> = None; // (version, bin, cwd)
+    for dir in npx_cache_dirs() {
+        let pkg_dir = dir.join("node_modules/@deepseek-ai/dsh");
+        let bin = pkg_dir.join("lib/bin.js");
+        if !bin.is_file() {
+            continue;
+        }
+        let pkg = pkg_dir.join("package.json");
+        let ver = std::fs::read_to_string(&pkg)
+            .ok()
+            .and_then(|t| serde_json::from_str::<serde_json::Value>(&t).ok())
+            .and_then(|v| v.get("version").and_then(|x| x.as_str()).map(String::from))
+            .unwrap_or_default();
+        let is_better = best
+            .as_ref()
+            .map(|(v, _, _)| cmp_ver(&ver, v) == std::cmp::Ordering::Greater)
+            .unwrap_or(true);
+        if is_better {
+            best = Some((ver, bin, dir));
+        }
+    }
+    best.map(|(_, bin, dir)| (bin, dir))
+}
+
 /// 升级系统（非托管）安装的 dsh，按它原本的安装方式原地升级：
 /// - PATH 上的全局安装 → `npm install -g @deepseek-ai/dsh@<version>`
 /// - npx 缓存 → `npx --yes @deepseek-ai/dsh@<version> --version` 刷新缓存

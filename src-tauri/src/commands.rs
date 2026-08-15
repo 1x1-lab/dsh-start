@@ -31,6 +31,8 @@ pub struct RuntimeInfo {
     pub node_version: Option<String>,
     pub installed_version: Option<String>,
     pub system_dsh_version: Option<String>,
+    /// 系统 dsh 所在目录（npx 缓存根目录）；None = 未发现
+    pub system_dsh_location: Option<String>,
     pub runtime_dir: String,
 }
 
@@ -124,6 +126,7 @@ pub fn get_runtime_info(app: AppHandle) -> RuntimeInfo {
         node_version: node.as_ref().map(|n| n.node_version.clone()),
         installed_version: runtime::installed_version(&app),
         system_dsh_version: runtime::system_dsh_version(),
+        system_dsh_location: runtime::system_dsh_dir().map(|(_, cwd)| cwd.display().to_string()),
         runtime_dir: runtime::runtime_dir(&app).display().to_string(),
     }
 }

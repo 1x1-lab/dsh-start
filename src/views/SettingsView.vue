@@ -29,6 +29,7 @@ const message = ref("");
 const appVersion = ref("");
 const runtimeDir = ref("");
 const systemDshVersion = ref<string | null>(null);
+const systemDshLocation = ref<string | null>(null);
 
 onMounted(async () => {
   try {
@@ -45,16 +46,17 @@ onMounted(async () => {
     const info = await api.getRuntimeInfo();
     runtimeDir.value = info.runtimeDir;
     systemDshVersion.value = info.systemDshVersion;
+    systemDshLocation.value = info.systemDshLocation;
   } catch {
     /* ignore */
   }
   void checkAppUpdate(); // 已检查过则静默跳过
 });
 
-async function openDir() {
-  if (!runtimeDir.value) return;
+async function openDir(path: string) {
+  if (!path) return;
   try {
-    await api.openDir(runtimeDir.value);
+    await api.openDir(path);
   } catch (e) {
     showToast(String(e));
   }
@@ -198,10 +200,19 @@ async function toggleAutostart(v: boolean) {
           }}</b>
         </div>
         <div class="aline">
-          <span>{{ t("about.dshLocation") }}</span>
+          <span>{{ t("about.dshManaged") }}</span>
           <span class="loc-row">
             <code class="loc">{{ runtimeDir || "—" }}</code>
-            <button v-if="runtimeDir" class="link" @click="openDir">
+            <button v-if="runtimeDir" class="link" @click="openDir(runtimeDir)">
+              {{ t("about.openDir") }}
+            </button>
+          </span>
+        </div>
+        <div v-if="systemDshLocation" class="aline">
+          <span>{{ t("about.dshSystem") }}</span>
+          <span class="loc-row">
+            <code class="loc">{{ systemDshLocation }}</code>
+            <button class="link" @click="openDir(systemDshLocation)">
               {{ t("about.openDir") }}
             </button>
           </span>
