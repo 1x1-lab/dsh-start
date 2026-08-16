@@ -67,10 +67,16 @@ async function finish() {
     }
   }
   store.wizardDismissed = true;
+  try {
+    await api.dismissWizard(); // 持久化：下次启动不再弹
+  } catch {
+    /* 忽略 */
+  }
 }
 
 function skip() {
   store.wizardDismissed = true;
+  void api.dismissWizard().catch(() => {}); // 持久化：下次启动不再弹
 }
 </script>
 
@@ -106,6 +112,9 @@ function skip() {
             <span v-if="checking" class="dv muted">{{ t("wiz.checking") }}</span>
             <span v-else-if="info?.installedVersion" class="dv ok">
               {{ t("wiz.dshInstalled", { v: info.installedVersion }) }}
+            </span>
+            <span v-else-if="info?.systemDshVersion" class="dv ok">
+              {{ t("wiz.dshSystem", { v: info.systemDshVersion }) }}
             </span>
             <span v-else class="dv">{{ t("wiz.dshMissing") }}</span>
           </div>

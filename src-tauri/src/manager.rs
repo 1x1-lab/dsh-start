@@ -43,6 +43,7 @@ pub fn status_payload(app: &AppHandle) -> StatusPayload {
             .installed_version
             .clone()
             .or_else(|| runtime::installed_version(app)),
+        system_dsh_version: runtime::system_dsh_version(),
         uptime_ms: st.started_at.map(|t| t.elapsed().as_millis() as u64),
         last_error: st.last_error.clone(),
         control_port: control,
@@ -87,20 +88,26 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
         *app.state::<AppState>().node_info.lock().unwrap() = Some(node_info);
     }
 
+    // 托管副本缺失时：优先直接用系统已安装的 dsh（npx 缓存），
+    // 只有托管和系统都没有时才自动安装托管副本。
     if runtime::installed_version(app).is_none() {
-        log_event(app, "info", "DSH 尚未安装，开始自动安装（npm install）…");
-        set_status(app, DshStatus::Installing);
-        let version = {
-            app.state::<AppState>().settings.lock().unwrap().dsh_version.clone()
-        };
-        let mut forward = runtime::forward_install_lines(app);
-        match runtime::install(app, &version, &mut forward) {
-            Ok(v) => {
-                log_event(app, "info", &format!("DSH 安装完成：v{v}"));
-            }
-            Err(e) => {
-                set_status(app, DshStatus::Error);
-                return Err(e);
+        if runtime::system_dsh_dir().is_some() {
+            log_event(app, "info", "托管副本缺失，直接使用系统已安装的 DSH");
+        } else {
+            log_event(app, "info", "DSH 尚未安装，开始自动安装（npm install）…");
+            set_status(app, DshStatus::Installing);
+            let version = {
+                app.state::<AppState>().settings.lock().unwrap().dsh_version.clone()
+            };
+            let mut forward = runtime::forward_install_lines(app);
+            match runtime::install(app, &version, &mut forward) {
+                Ok(v) => {
+                    log_event(app, "info", &format!("DSH 安装完成：v{v}"));
+                }
+                Err(e) => {
+                    set_status(app, DshStatus::Error);
+                    return Err(e);
+                }
             }
         }
     }
@@ -110,7 +117,15 @@ pub fn start(app: &AppHandle) -> Result<(), String> {
 
 fn spawn(app: &AppHandle) -> Result<(), String> {
     let node_info = runtime::detect_node().map_err(|e| e)?;
-    let bin = runtime::dsh_bin(app).ok_or("DSH 未安装，请先完成安装")?;
+    // 优先托管副本，缺失时回退系统 dsh（npx 缓存）；cwd 用其 node_modules 所在目录
+    let (bin, cwd) = match (runtime::dsh_bin(app), runtime::system_dsh_dir()) {
+        (Some(b), _) => (b, runtime::runtime_dir(app)),
+        (None, Some((b, cwd))) => {
+            log_event(app, "info", "使用系统 dsh（npx 缓存）启动");
+            (b, cwd)
+        }
+        (None, None) => return Err("未找到 DSH（托管与系统均无，请先安装）".into()),
+    };
     let port = app.state::<AppState>().settings.lock().unwrap().port;
 
     if tcp_probe(port) {
@@ -135,7 +150,7 @@ fn spawn(app: &AppHandle) -> Result<(), String> {
         .arg("web")
         .arg("--port")
         .arg(port.to_string())
-        .current_dir(runtime::runtime_dir(app))
+        .current_dir(cwd)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -474,12 +489,89 @@ fn force_kill(pid: u32) {
     }
     #[cfg(windows)]
     {
-        let _ = Command::new("taskkill")
-            .args(["/PID", &pid.to_string(), "/T", "/F"])
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status();
+            .stderr(Stdio::null());
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW：避免黑窗口闪现
+        }
+        let _ = cmd.status();
     }
+}
+
+/// 端口反查监听进程 PID（外部实例没有托管 pid，只能按端口找）。
+fn pid_on_port(port: u16) -> Option<u32> {
+    #[cfg(windows)]
+    {
+        // netstat 输出形如：TCP    127.0.0.1:3080    0.0.0.0:0    LISTENING    7148
+        let mut cmd = Command::new("netstat");
+        cmd.args(["-ano", "-p", "tcp"]);
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW：避免黑窗口闪现
+        let out = cmd.output().ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let needle = format!(":{port}");
+        for line in text.lines() {
+            let parts: Vec<&str> = line.split_whitespace().collect();
+            if parts.len() >= 5
+                && parts[0].eq_ignore_ascii_case("tcp")
+                && parts[1].ends_with(&needle)
+                && parts[3].eq_ignore_ascii_case("listening")
+            {
+                return parts[4].parse().ok();
+            }
+        }
+        None
+    }
+    #[cfg(unix)]
+    {
+        // lsof -ti tcp:PORT 直接输出监听进程的 PID
+        let out = Command::new("lsof")
+            .args(["-ti", &format!("tcp:{port}")])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        text.lines().next().and_then(|l| l.trim().parse().ok())
+    }
+}
+
+/// 强制停止外部启动的 DSH 实例：按端口反查进程并结束其进程树。
+/// 结束后 watch_external 会在 ~1.5s 内探测到端口不再响应，把状态回落为 idle。
+pub fn force_stop_external(app: &AppHandle) -> Result<(), String> {
+    let port = app.state::<AppState>().settings.lock().unwrap().port;
+    let pid = pid_on_port(port)
+        .ok_or_else(|| format!("未找到监听 {port} 端口的进程（可能已停止）"))?;
+    log_event(
+        app,
+        "info",
+        &format!("强制停止外部 DSH 实例 (pid={pid}, port={port})"),
+    );
+    #[cfg(windows)]
+    {
+        let mut cmd = Command::new("taskkill");
+        cmd.args(["/PID", &pid.to_string(), "/T", "/F"])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let status = cmd.status().map_err(|e| format!("taskkill 失败: {e}"))?;
+        if !status.success() {
+            return Err(format!("taskkill 失败（exit={:?}）", status.code()));
+        }
+    }
+    #[cfg(unix)]
+    {
+        use nix::sys::signal::{kill, Signal};
+        use nix::unistd::Pid;
+        let _ = kill(Pid::from_raw(pid as i32), Signal::SIGTERM);
+        std::thread::sleep(Duration::from_millis(800));
+        let _ = kill(Pid::from_raw(pid as i32), Signal::SIGKILL);
+    }
+    log_event(app, "info", "已发送强制停止，等待端口释放…");
+    Ok(())
 }
 
 fn tcp_probe(port: u16) -> bool {

@@ -54,8 +54,9 @@ function toastResult() {
 }
 
 /**
- * 查询 GitHub 最新 release（tag_name）并与本应用版本比对。
- * - 仓库尚无 release（404）→ 视为已是最新，checked=true
+ * 查询 GitHub 最新版本并与本应用版本比对。
+ * - 优先取最新 release 的 tag_name（草稿 release 对 API 不可见）
+ * - 无 release（404）→ 回退到 tags（公开即时，打 tag 即可被检测到）
  * - 网络/限流等其他错误 → failed=true，UI 提示可重试
  * @param force 忽略已检查过的缓存，强制重新查询
  * @param notify 完成后用居中 toast 反馈结果
@@ -68,13 +69,21 @@ export async function checkAppUpdate(force = false, notify = false): Promise<voi
     if (!appUpdate.current) {
       appUpdate.current = await getVersion();
     }
-    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-      headers: { Accept: "application/vnd.github+json" },
-    });
+    const headers = { Accept: "application/vnd.github+json" };
+    const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, { headers });
     if (res.status === 404) {
-      // 仓库还没有发布任何 release → 无从更新
+      // 无公开 release（可能从未发布或仍是草稿）→ 回退到最新 tag
+      const tagRes = await fetch(`https://api.github.com/repos/${REPO}/tags?per_page=1`, {
+        headers,
+      });
+      if (tagRes.ok) {
+        const tags = (await tagRes.json()) as { name?: string }[];
+        const tag = tags[0]?.name ?? "";
+        appUpdate.latest = tag.replace(/^v/i, "") || null;
+      } else {
+        appUpdate.latest = null;
+      }
       appUpdate.checked = true;
-      appUpdate.latest = null;
       return;
     }
     if (!res.ok) throw new Error(`GitHub API ${res.status}`);

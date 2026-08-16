@@ -5,6 +5,8 @@ export interface StatusPayload {
   pid: number | null;
   port: number;
   installedVersion: string | null;
+  /** 系统层面（PATH 全局安装 / npx 缓存）存在的 dsh 版本 */
+  systemDshVersion: string | null;
   uptimeMs: number | null;
   lastError: string | null;
   controlPort: number | null;
@@ -18,6 +20,8 @@ export interface RuntimeInfo {
   nodePresent: boolean;
   nodeVersion: string | null;
   installedVersion: string | null;
+  systemDshVersion: string | null;
+  systemDshLocation: string | null;
   runtimeDir: string;
 }
 
@@ -42,6 +46,8 @@ export interface Settings {
   registerCli: boolean;
   /** 界面语言：zh / en */
   language: string;
+  /** 首次向导已跳过/完成（持久化） */
+  wizardDismissed: boolean;
 }
 
 export interface LogLine {
@@ -61,19 +67,24 @@ export const api = {
   startDsh: () => invoke<void>("start_dsh"),
   stopDsh: () => invoke<void>("stop_dsh"),
   restartDsh: (reason?: string) => invoke<void>("restart_dsh", { reason }),
+  forceStopExternal: () => invoke<void>("force_stop_external"),
   ensureRuntime: (version?: string) =>
     invoke<RuntimeInstallResult>("ensure_runtime", { version }),
   getRuntimeInfo: () => invoke<RuntimeInfo>("get_runtime_info"),
   installNodeGuided: () => invoke<string>("install_node_guided"),
   updateDsh: () => invoke<string>("update_dsh"),
+  upgradeSystemDsh: (version?: string) =>
+    invoke<string>("upgrade_system_dsh", { version }),
   checkUpdate: () => invoke<UpdateCheck>("check_update"),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) =>
     invoke<void>("save_settings", { settings }),
+  dismissWizard: () => invoke<void>("dismiss_wizard"),
   setAutostart: (enabled: boolean) =>
     invoke<boolean>("set_autostart", { enabled }),
   getAutostart: () => invoke<boolean>("get_autostart"),
   getLogs: (limit?: number) => invoke<LogLine[]>("get_logs", { limit }),
   getCallbackInfo: () => invoke<CallbackInfo>("get_callback_info"),
   openLogFile: () => invoke<void>("open_log_file"),
+  openDir: (path: string) => invoke<void>("open_dir", { path }),
 };
