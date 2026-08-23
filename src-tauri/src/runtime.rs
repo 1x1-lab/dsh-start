@@ -26,14 +26,17 @@ pub fn find_on_path(program: &str) -> Option<PathBuf> {
     };
     for dir in std::env::split_paths(&path_var) {
         let base = dir.join(program);
-        if base.is_file() {
-            return Some(base);
-        }
+        // Windows：先按 PATHEXT 依次匹配（与 cmd 同语义），再试无扩展名文件。
+        // nodejs 目录下同时存在 POSIX sh 脚本（如 npx/npm）与 .cmd，必须优先 .cmd，
+        // 否则会拿到无法直接执行的 sh 脚本。
         for ext in &exts {
             let cand = PathBuf::from(format!("{}{}", base.to_string_lossy(), ext));
             if cand.is_file() {
                 return Some(cand);
             }
+        }
+        if base.is_file() {
+            return Some(base);
         }
     }
     None
@@ -105,6 +108,14 @@ fn resolve_npm_cli(node: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+/// Resolve the npx-cli.js entry so we can run npx through `node` directly
+/// (no .cmd shim / shell indirection needed).
+fn resolve_npx_cli(node: &Path) -> Option<PathBuf> {
+    node.parent()
+        .map(|d| d.join("node_modules/npm/bin/npx-cli.js"))
+        .filter(|p| p.is_file())
 }
 
 pub fn runtime_dir(app: &AppHandle) -> PathBuf {
@@ -280,18 +291,26 @@ pub fn upgrade_system_dsh(app: &AppHandle, version: &str) -> Result<String, Stri
         "info",
         &format!("升级系统 DSH（npx 缓存）到 {version}…"),
     );
-    let npx = find_on_path("npx").ok_or("未检测到 npx")?;
     let args = ["--yes", &spec, "--version"];
-    let status = if cfg!(windows) {
-        let mut cmd = Command::new("cmd");
-        cmd.arg("/C")
-            .arg(format!("\"{}\"", npx.display()))
-            .args(args);
+    // 优先 node + npx-cli.js 直跑，绕开 .cmd shim 与 cmd.exe 的引号转义坑
+    // （手动加的引号会被 Rust 再转义成 \" ，cmd 解析后命令行直接损坏）。
+    let status = if let Some(cli) = resolve_npx_cli(&node_info.node) {
+        let mut cmd = Command::new(&node_info.node);
+        cmd.arg(cli).args(args);
         run_cmd_streaming(&mut cmd, &mut forward)?
     } else {
-        let mut cmd = Command::new(npx);
-        cmd.args(args);
-        run_cmd_streaming(&mut cmd, &mut forward)?
+        let npx = find_on_path("npx").ok_or("未检测到 npx")?;
+        if cfg!(windows) {
+            let mut cmd = Command::new("cmd");
+            cmd.arg("/C")
+                .arg(format!("\"{}\"", npx.display()))
+                .args(args);
+            run_cmd_streaming(&mut cmd, &mut forward)?
+        } else {
+            let mut cmd = Command::new(npx);
+            cmd.args(args);
+            run_cmd_streaming(&mut cmd, &mut forward)?
+        }
     };
     if !status.success() {
         return Err(format!("npx 刷新失败（exit={:?}）", status.code()));
