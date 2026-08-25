@@ -1,6 +1,6 @@
 [package]
 name = "dsh-start"
-version = "0.1.4"
+version = "0.1.4-rc.2"
 description = "Auto-install and auto-start managed host for DSH (DeepSeek Harness)"
 license = "Apache-2.0"
 repository = "https://github.com/1x1-lab/dsh-start"

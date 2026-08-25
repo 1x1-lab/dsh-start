@@ -1,7 +1,7 @@
 {
   "name": "dsh-start",
   "private": true,
-  "version": "0.1.4",
+  "version": "0.1.4-rc.2",
   "type": "module",
   "description": "Auto-install and auto-start managed host for DSH (DeepSeek Harness). Cross-platform Tauri desktop app.",
   "license": "Apache-2.0",
