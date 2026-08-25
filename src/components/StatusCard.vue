@@ -67,7 +67,17 @@ const d = computed(() => {
         :title="updateLabel ?? t('dash.updateTo', { v: updateTo ?? '' })"
         @click="emit('update-click')"
       >
-        ⬆
+        <!-- 字符「⬆」字形基线不稳，用 SVG 箭头保证在外圆中精确居中 -->
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path
+            d="M5 8.5v-7M1.5 5L5 1.5 8.5 5"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.4"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
       </button>
     </div>
     <em class="ind">{{ d.node ? `Node ${d.node}` : t("card.noNode") }}</em>
@@ -111,13 +121,13 @@ const d = computed(() => {
   flex: none;
   width: 20px;
   height: 20px;
+  padding: 0; /* 清除浏览器默认按钮内边距，避免内容区不对称导致偏移 */
   display: grid;
   place-items: center;
   border: none;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--accent), var(--accent-2));
   color: #fff;
-  font-size: 11px;
   cursor: pointer;
   transition: filter 0.12s;
 }
