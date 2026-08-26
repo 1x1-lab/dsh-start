@@ -168,9 +168,6 @@ async function onForceStop() {
       <span class="spin" aria-hidden="true"></span>
       <span>{{ t("dash.upgradeInProgress", { v: store.updateTarget ?? latest ?? "" }) }}</span>
     </div>
-    <p v-if="external" class="hint">
-      {{ t("dash.externalHint", { port: store.status?.port ?? "" }) }}
-    </p>
     <p v-if="message" class="msg">{{ message }}</p>
 
     <div class="grid-12">
@@ -232,12 +229,6 @@ async function onForceStop() {
   background: var(--red);
   border-color: transparent;
   color: #fff;
-}
-.hint {
-  margin: 0;
-  color: var(--text-dim);
-  font-size: 12px;
-  line-height: 1.6;
 }
 </style>
 
