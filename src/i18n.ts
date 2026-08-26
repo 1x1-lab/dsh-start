@@ -46,12 +46,10 @@ const zh = {
   "dash.upgradeSystem": "升级系统 DSH 到 v{v}",
   "dash.systemUpgraded": "系统 DSH 已升级到 v{v}",
   "dash.updating": "更新中…",
-  "dash.upgradeInProgress": "正在升级 DSH 到 v{v}，实时输出：",
+  "dash.upgradeInProgress": "正在升级 DSH 到 v{v}…",
   "dash.forceStop": "强制停止外部实例",
   "dash.confirmStop": "确认强制停止？",
   "dash.forceStopDone": "已发送强制停止，端口释放后状态自动更新",
-  "dash.externalHint":
-    "检测到端口 {port} 上由外部启动的 DSH（未托管）：如需本应用托管，请先停止外部实例再启动；也可以直接「强制停止外部实例」结束它（按端口反查进程）。",
 
   // ===== 状态卡 =====
   "card.port": "DSH 端口",
@@ -194,12 +192,10 @@ const en: Record<MsgKey, string> = {
   "dash.upgradeSystem": "Upgrade system DSH to v{v}",
   "dash.systemUpgraded": "System DSH upgraded to v{v}",
   "dash.updating": "Updating…",
-  "dash.upgradeInProgress": "Upgrading DSH to v{v} — live output:",
+  "dash.upgradeInProgress": "Upgrading DSH to v{v}…",
   "dash.forceStop": "Force Stop External",
   "dash.confirmStop": "Confirm force stop?",
   "dash.forceStopDone": "Force stop sent; status updates when the port frees",
-  "dash.externalHint":
-    "An externally started DSH was detected on port {port} (not managed): to let this app manage DSH, stop the external instance first, or use \"Force Stop External\" to kill it (looked up by port).",
 
   "card.port": "DSH Port",
   "card.controlPort": "Control Port",

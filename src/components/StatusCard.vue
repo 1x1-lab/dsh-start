@@ -12,7 +12,7 @@ const props = defineProps<{
   updateTo?: string | null;
   /** 升级入口文案（托管=更新到 vX；非托管=安装托管副本 vX） */
   updateLabel?: string;
-  /** 升级进行中 → 箭头锁定并旋转，防止重复点击 */
+  /** 升级进行中 → 锁定按钮防止重复点击 */
   updateBusy?: boolean;
 }>();
 const emit = defineEmits<{ (e: "update-click"): void }>();
@@ -66,7 +66,6 @@ const d = computed(() => {
       <button
         v-if="updateAvailable"
         class="up-arrow"
-        :class="{ loading: updateBusy }"
         :disabled="updateBusy"
         :title="updateLabel ?? t('dash.updateTo', { v: updateTo ?? '' })"
         @click="emit('update-click')"
@@ -138,17 +137,10 @@ const d = computed(() => {
 .up-arrow:hover {
   filter: brightness(1.15);
 }
+/* 升级进行中：变暗表示锁定（不转动画） */
 .up-arrow:disabled {
   cursor: default;
-}
-/* 升级进行中：箭头旋转作为就地进度指示 */
-.up-arrow.loading svg {
-  animation: up-spin 0.9s linear infinite;
-}
-@keyframes up-spin {
-  to {
-    transform: rotate(360deg);
-  }
+  opacity: 0.55;
 }
 .stat em {
   display: block;

@@ -7,6 +7,10 @@ export const store = reactive({
   logs: [] as LogLine[],
   installProgress: [] as string[],
   wizardDismissed: false,
+  /** 升级任务进行中（全局记忆：切换标签页组件销毁重建后仍保持锁定与进度展示） */
+  updateBusy: false,
+  /** 本次升级的目标版本号（点击时固定；避免切页回来 latest 尚未刷新导致空版本号文案） */
+  updateTarget: null as string | null,
   /** 最后一次状态快照里的 uptimeMs 及其本地接收时刻（用于本地推算） */
   uptimeBase: null as number | null,
   uptimeAt: 0,
