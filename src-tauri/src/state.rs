@@ -100,6 +100,9 @@ pub struct AppState {
     pub control_port: Mutex<Option<u16>>,
     /// bumped on every control-endpoint (re)bind so the previous listener exits.
     pub control_generation: AtomicU64,
+    /// npm 写操作（安装/更新/系统升级）互斥标志：并发的 npm/npx 会争抢同一份
+    /// 缓存锁（libnpmexec 报 ECOMPROMISED / Lock compromised），同一时刻只放行一个。
+    pub install_busy: AtomicBool,
     pub shim_dir: Mutex<Option<PathBuf>>,
     pub tray: Mutex<Option<tauri::tray::TrayIcon>>,
     pub tray_status_item: Mutex<Option<tauri::menu::MenuItem<tauri::Wry>>>,
@@ -116,6 +119,7 @@ impl Default for AppState {
             node_info: Mutex::new(None),
             control_port: Mutex::new(None),
             control_generation: AtomicU64::new(0),
+            install_busy: AtomicBool::new(false),
             shim_dir: Mutex::new(None),
             tray: Mutex::new(None),
             tray_status_item: Mutex::new(None),
