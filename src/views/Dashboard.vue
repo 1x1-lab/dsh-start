@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api";
 import { liveUptimeMs, store } from "../events";
@@ -35,13 +35,8 @@ const updateLabel = computed(() =>
 );
 const uptime = ref(liveUptimeMs());
 
-// 升级进行中：展示 npm 实时输出的尾部（完整日志在「日志」页）
-const progTail = computed(() => store.installProgress.slice(-6));
-const progBox = ref<HTMLElement | null>(null);
-watch(progTail, async () => {
-  await nextTick();
-  if (progBox.value) progBox.value.scrollTop = progBox.value.scrollHeight;
-});
+/** 升级进行中：本地点击或切页返回后（状态存全局 store，跨标签页记忆） */
+const updating = computed(() => busy.value === "update" || store.updateBusy);
 
 function tick() {
   uptime.value = liveUptimeMs();
@@ -60,10 +55,15 @@ onMounted(checkUpdate);
 
 // 升级需区分方式：
 // 托管副本 → update_dsh（停 → 装 → 恢复运行）；
-// 系统安装（非托管）→ 按原始方式原地升级（全局 npm install -g / npx 刷新），不转为托管
+// 系统安装（非托管）→ 按原始方式原地升级（全局 npm install -g / npx 刷新），不转为托管。
+// 进行中状态记入全局 store：切换标签页销毁本组件后仍保持锁定与「正在升级」提示
 async function doUpdate() {
-  await run(async () => {
-    store.installProgress = []; // 进度面板从零开始
+  if (busy.value || store.updateBusy) return;
+  busy.value = "update";
+  message.value = "";
+  store.updateBusy = true;
+  store.updateTarget = latest.value;
+  try {
     if (managed.value) {
       const v = await api.updateDsh();
       latest.value = v; // 已更新到该版本 → 入口隐藏
@@ -72,7 +72,13 @@ async function doUpdate() {
       latest.value = v;
       showToast(t("dash.systemUpgraded", { v }));
     }
-  }, "update");
+  } catch (e) {
+    message.value = String(e);
+  } finally {
+    busy.value = null;
+    store.updateBusy = false;
+    store.updateTarget = null;
+  }
 }
 
 async function run(action: () => Promise<unknown>, key: string) {
@@ -117,7 +123,7 @@ async function onForceStop() {
         <button
           class="btn danger"
           :class="{ armed: armedStop }"
-          :disabled="busy !== null"
+          :disabled="busy !== null || store.updateBusy"
           @click="onForceStop"
         >
           {{ armedStop ? t("dash.confirmStop") : t("dash.forceStop") }}
@@ -127,14 +133,14 @@ async function onForceStop() {
         <button class="btn primary" @click="openConsole">{{ t("dash.openConsole") }}</button>
         <button
           class="btn"
-          :disabled="busy !== null"
+          :disabled="busy !== null || store.updateBusy"
           @click="run(() => api.restartDsh('ui'), 'restart')"
         >
           {{ busy === "restart" ? t("dash.restarting") : t("dash.restart") }}
         </button>
         <button
           class="btn danger"
-          :disabled="busy !== null"
+          :disabled="busy !== null || store.updateBusy"
           @click="run(() => api.stopDsh(), 'stop')"
         >
           {{ busy === "stop" ? t("dash.stopping") : t("dash.stop") }}
@@ -143,7 +149,7 @@ async function onForceStop() {
       <button
         v-else
         class="btn primary"
-        :disabled="busy !== null"
+        :disabled="busy !== null || store.updateBusy"
         @click="run(() => api.startDsh(), 'start')"
       >
         {{ busy === "start" ? t("dash.starting") : t("dash.start") }}
@@ -151,21 +157,16 @@ async function onForceStop() {
       <button
         v-if="hasUpdate"
         class="btn"
-        :disabled="busy !== null"
+        :disabled="busy !== null || store.updateBusy"
         @click="doUpdate"
       >
-        {{ busy === "update" ? t("dash.updating") : updateLabel }}
+        {{ updating ? t("dash.updating") : updateLabel }}
       </button>
     </div>
-    <!-- 升级进行中：实时展示 npm 输出尾部 -->
-    <div v-if="busy === 'update'" class="upgrade-prog">
-      <div class="prog-head">
-        <span class="spin" aria-hidden="true"></span>
-        <span>{{ t("dash.upgradeInProgress", { v: latest ?? "" }) }}</span>
-      </div>
-      <div ref="progBox" class="prog-box">
-        <div v-for="(l, i) in progTail" :key="i" class="pl">{{ l }}</div>
-      </div>
+    <!-- 升级进行中（跨标签页记忆；npm 输出不在此展示，完整日志见「日志」页） -->
+    <div v-if="store.updateBusy" class="upgrade-hint">
+      <span class="spin" aria-hidden="true"></span>
+      <span>{{ t("dash.upgradeInProgress", { v: store.updateTarget ?? latest ?? "" }) }}</span>
     </div>
     <p v-if="external" class="hint">
       {{ t("dash.externalHint", { port: store.status?.port ?? "" }) }}
@@ -179,7 +180,7 @@ async function onForceStop() {
         :update-available="hasUpdate"
         :update-to="latest"
         :update-label="updateLabel"
-        :update-busy="busy === 'update'"
+        :update-busy="store.updateBusy"
         @update-click="doUpdate"
       />
       <CallbackCard class="s12" />
@@ -203,33 +204,15 @@ async function onForceStop() {
   color: var(--red);
   font-size: 12px;
 }
-/* 升级进行中的实时进度面板 */
-.upgrade-prog {
-  background: var(--bg-soft);
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 10px 12px;
-}
-.prog-head {
+/* 升级进行中的轻提示（无输出面板，日志见「日志」页） */
+.upgrade-hint {
   display: flex;
   align-items: center;
   gap: 8px;
   font-size: 12.5px;
   font-weight: 600;
-}
-.prog-box {
-  margin-top: 8px;
-  max-height: 96px;
-  overflow-y: auto;
-  font-family: ui-monospace, Consolas, monospace;
-  font-size: 11.5px;
-  line-height: 1.55;
   color: var(--text-dim);
-  user-select: text;
-}
-.pl {
-  white-space: pre-wrap;
-  word-break: break-all;
+  margin: 0;
 }
 .spin {
   width: 13px;
