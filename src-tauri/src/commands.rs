@@ -1,10 +1,29 @@
 use serde::Serialize;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::manager;
 use crate::runtime;
 use crate::settings::{self, Settings};
 use crate::state::{AppState, DshStatus};
+
+/// RAII 持有 `install_busy`；drop 时自动释放，覆盖所有早退/panic 路径。
+struct InstallBusyGuard<'a>(&'a AtomicBool);
+
+impl Drop for InstallBusyGuard<'_> {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::SeqCst);
+    }
+}
+
+/// 尝试独占安装/升级通道；已有任务在跑时返回 None。
+/// 并发的 npm/npx 会争抢同一份缓存锁（ECOMPROMISED / Lock compromised），
+/// 必须在应用层串行化。
+fn try_lock_install(flag: &AtomicBool) -> Option<InstallBusyGuard<'_>> {
+    flag.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_ok()
+        .then_some(InstallBusyGuard(flag))
+}
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -107,6 +126,10 @@ pub fn force_stop_external(app: AppHandle) -> Result<(), String> {
 pub async fn upgrade_system_dsh(app: AppHandle, version: Option<String>) -> Result<String, String> {
     let v = version.unwrap_or_else(|| "latest".into());
     tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let Some(_busy) = try_lock_install(&state.install_busy) else {
+            return Err("已有安装或升级任务正在进行，请等待其完成".into());
+        };
         let result = runtime::upgrade_system_dsh(&app, &v);
         match &result {
             Ok(_) => manager::emit_status(&app),
@@ -137,6 +160,10 @@ pub fn get_runtime_info(app: AppHandle) -> RuntimeInfo {
 pub async fn ensure_runtime(app: AppHandle, version: Option<String>) -> Result<RuntimeInstallResult, String> {
     let requested = version.unwrap_or_else(|| "latest".into());
     tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let Some(_busy) = try_lock_install(&state.install_busy) else {
+            return Err("已有安装或升级任务正在进行，请等待其完成".into());
+        };
         manager::set_status(&app, DshStatus::Installing);
         let prev = runtime::installed_version(&app);
         let result = {
@@ -246,12 +273,16 @@ pub fn install_node_guided(app: AppHandle) -> Result<String, String> {
 #[tauri::command]
 pub async fn update_dsh(app: AppHandle) -> Result<String, String> {
     tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let Some(_busy) = try_lock_install(&state.install_busy) else {
+            return Err("已有安装或升级任务正在进行，请等待其完成".into());
+        };
         let was_running = matches!(
-            app.state::<AppState>().manager.lock().unwrap().status,
+            state.manager.lock().unwrap().status,
             DshStatus::Running | DshStatus::Starting
         );
         let _ = manager::stop(&app);
-        let version = app.state::<AppState>().settings.lock().unwrap().dsh_version.clone();
+        let version = state.settings.lock().unwrap().dsh_version.clone();
         manager::set_status(&app, DshStatus::Installing);
         let result = {
             let mut forward = runtime::forward_install_lines(&app);

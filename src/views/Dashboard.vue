@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "../api";
 import { liveUptimeMs, store } from "../events";
@@ -35,6 +35,14 @@ const updateLabel = computed(() =>
 );
 const uptime = ref(liveUptimeMs());
 
+// 升级进行中：展示 npm 实时输出的尾部（完整日志在「日志」页）
+const progTail = computed(() => store.installProgress.slice(-6));
+const progBox = ref<HTMLElement | null>(null);
+watch(progTail, async () => {
+  await nextTick();
+  if (progBox.value) progBox.value.scrollTop = progBox.value.scrollHeight;
+});
+
 function tick() {
   uptime.value = liveUptimeMs();
 }
@@ -55,6 +63,7 @@ onMounted(checkUpdate);
 // 系统安装（非托管）→ 按原始方式原地升级（全局 npm install -g / npx 刷新），不转为托管
 async function doUpdate() {
   await run(async () => {
+    store.installProgress = []; // 进度面板从零开始
     if (managed.value) {
       const v = await api.updateDsh();
       latest.value = v; // 已更新到该版本 → 入口隐藏
@@ -148,6 +157,16 @@ async function onForceStop() {
         {{ busy === "update" ? t("dash.updating") : updateLabel }}
       </button>
     </div>
+    <!-- 升级进行中：实时展示 npm 输出尾部 -->
+    <div v-if="busy === 'update'" class="upgrade-prog">
+      <div class="prog-head">
+        <span class="spin" aria-hidden="true"></span>
+        <span>{{ t("dash.upgradeInProgress", { v: latest ?? "" }) }}</span>
+      </div>
+      <div ref="progBox" class="prog-box">
+        <div v-for="(l, i) in progTail" :key="i" class="pl">{{ l }}</div>
+      </div>
+    </div>
     <p v-if="external" class="hint">
       {{ t("dash.externalHint", { port: store.status?.port ?? "" }) }}
     </p>
@@ -160,6 +179,7 @@ async function onForceStop() {
         :update-available="hasUpdate"
         :update-to="latest"
         :update-label="updateLabel"
+        :update-busy="busy === 'update'"
         @update-click="doUpdate"
       />
       <CallbackCard class="s12" />
@@ -182,6 +202,48 @@ async function onForceStop() {
   margin: 0;
   color: var(--red);
   font-size: 12px;
+}
+/* 升级进行中的实时进度面板 */
+.upgrade-prog {
+  background: var(--bg-soft);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 10px 12px;
+}
+.prog-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+.prog-box {
+  margin-top: 8px;
+  max-height: 96px;
+  overflow-y: auto;
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 11.5px;
+  line-height: 1.55;
+  color: var(--text-dim);
+  user-select: text;
+}
+.pl {
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+.spin {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  border-radius: 50%;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  animation: spin 0.8s linear infinite;
+}
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 .btn.danger.armed {
   background: var(--red);
