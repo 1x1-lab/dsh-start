@@ -230,12 +230,14 @@ pub fn install_node_guided(app: AppHandle) -> Result<String, String> {
     }
     #[cfg(target_os = "macos")]
     {
-        if runtime::find_on_path("brew").is_some() {
+        if let Some(brew) = runtime::find_on_path("brew") {
             crate::logger::log_event(&app, "info", "通过 Homebrew 安装 Node…");
             let mut fwd = |line: &str| {
                 let _ = app.emit("install-progress", line.to_string());
             };
-            let ok = runtime::run_streaming("brew", &["install", "node"], &mut fwd)
+            // GUI 进程 PATH 精简，Command::new("brew") 按名字解析会失败，必须用绝对路径
+            let brew_str = brew.to_string_lossy().to_string();
+            let ok = runtime::run_streaming(&brew_str, &["install", "node"], &mut fwd)
                 .map(|s| s.success())
                 .unwrap_or(false);
             if ok {

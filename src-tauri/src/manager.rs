@@ -156,12 +156,15 @@ fn spawn(app: &AppHandle) -> Result<(), String> {
         .stderr(Stdio::piped());
     // make the callback shim resolvable from inside dsh's own shell tools
     if let Some(sd) = &shim_dir {
-        if let Some(path) = std::env::var_os("PATH") {
-            let mut paths = std::env::split_paths(&path).collect::<Vec<_>>();
-            paths.insert(0, sd.clone());
-            if let Ok(p) = std::env::join_paths(&paths) {
-                cmd.env("PATH", p);
-            }
+        // GUI 进程的 PATH 精简（尤其 macOS），合并登录 shell / 常见安装目录后传给子进程；
+        // shim 目录必须保持最前，避免 PATH 上的全局 dsh 抢占回调 shim
+        let mut paths: Vec<_> = std::env::var_os("PATH")
+            .map(|p| std::env::split_paths(&p).collect())
+            .unwrap_or_default();
+        paths.insert(0, sd.clone());
+        paths.extend(runtime::extra_search_dirs());
+        if let Ok(p) = std::env::join_paths(&paths) {
+            cmd.env("PATH", p);
         }
         cmd.env("DSH_START_EXE", std::env::current_exe().unwrap_or_default());
     }
