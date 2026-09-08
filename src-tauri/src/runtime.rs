@@ -10,6 +10,92 @@ use crate::state::{AppState, NodeInfo};
 pub const DSH_PACKAGE: &str = "@deepseek-ai/dsh";
 pub const DSH_BIN_REL: &str = "node_modules/@deepseek-ai/dsh/lib/bin.js";
 
+/// macOS GUI 应用从 Finder/Dock 启动时只继承精简 PATH（通常仅 /usr/bin:/bin:/usr/sbin:/sbin），
+/// Homebrew（/opt/homebrew/bin、/usr/local/bin）、nvm/fnm/volta 等安装的 node 都不在其中。
+/// 这里把登录 shell 的 PATH 与常见安装位置合并进搜索路径（结果进程级缓存）。
+#[cfg(target_os = "macos")]
+pub fn extra_search_dirs() -> Vec<PathBuf> {
+    use std::sync::OnceLock;
+    static EXTRA: OnceLock<Vec<PathBuf>> = OnceLock::new();
+    EXTRA
+        .get_or_init(|| {
+            let mut dirs: Vec<PathBuf> = Vec::new();
+            let mut push = |p: PathBuf| {
+                if p.is_dir() && !dirs.contains(&p) {
+                    dirs.push(p);
+                }
+            };
+
+            // 1) 登录 shell 解析出的 PATH（涵盖 zprofile/bash_profile 里自定义的任何路径；
+            //    非交互 shell 不读 .zshrc，写在 .zshrc 的 nvm/fnm 由下面 3) 兜底）。
+            //    取最后一行输出，避免 .zprofile 里无关 echo 干扰解析。
+            let shell = std::env::var_os("SHELL")
+                .unwrap_or_else(|| "/bin/zsh".into());
+            if let Ok(out) = Command::new(&shell)
+                .args(["-l", "-c", "echo $PATH"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::piped())
+                .stderr(Stdio::null())
+                .output()
+            {
+                if out.status.success() {
+                    let text = String::from_utf8_lossy(&out.stdout);
+                    if let Some(line) = text.lines().rev().map(str::trim).find(|l| !l.is_empty()) {
+                        for d in std::env::split_paths(line) {
+                            push(d);
+                        }
+                    }
+                }
+            }
+
+            // 2) /etc/paths（macOS 系统 PATH 配置）
+            if let Ok(text) = std::fs::read_to_string("/etc/paths") {
+                for line in text.lines().map(str::trim) {
+                    if !line.is_empty() {
+                        push(PathBuf::from(line));
+                    }
+                }
+            }
+
+            // 3) 常见包管理器 / 版本管理器安装位置（登录 shell 配置异常时的兜底）
+            let home = std::env::var_os("HOME").map(PathBuf::from);
+            push(PathBuf::from("/opt/homebrew/bin")); // Apple Silicon brew
+            push(PathBuf::from("/usr/local/bin")); // Intel brew / nodejs 官方 pkg
+            if let Some(home) = &home {
+                // nvm：NVM_DIR 优先；多版本时最高版本排最前（find_on_path 命中第一个）
+                let nvm_root = std::env::var_os("NVM_DIR")
+                    .map(PathBuf::from)
+                    .unwrap_or_else(|| home.join(".nvm"));
+                if let Ok(entries) = std::fs::read_dir(nvm_root.join("versions/node")) {
+                    let mut vers: Vec<(String, PathBuf)> = entries
+                        .flatten()
+                        .map(|e| {
+                            let name = e.file_name().to_string_lossy().to_string();
+                            (name.trim_start_matches('v').to_string(), e.path().join("bin"))
+                        })
+                        .filter(|(_, p)| p.is_dir())
+                        .collect();
+                    vers.sort_by(|a, b| cmp_ver(&b.0, &a.0));
+                    for (_, v) in vers {
+                        push(v);
+                    }
+                }
+                push(home.join(".volta/bin"));
+                push(home.join(".local/share/fnm/aliases/default/bin"));
+                push(home.join("Library/Application Support/fnm/aliases/default/bin")); // macOS fnm
+                push(home.join(".asdf/shims"));
+                push(home.join("Library/pnpm"));
+            }
+            dirs
+        })
+        .clone()
+}
+
+#[cfg(not(target_os = "macos"))]
+pub fn extra_search_dirs() -> Vec<PathBuf> {
+    Vec::new()
+}
+
 /// PATH lookup with Windows extension handling (.exe/.cmd/.bat).
 pub fn find_on_path(program: &str) -> Option<PathBuf> {
     let path_var = std::env::var_os("PATH")?;
@@ -24,7 +110,10 @@ pub fn find_on_path(program: &str) -> Option<PathBuf> {
     } else {
         vec![]
     };
-    for dir in std::env::split_paths(&path_var) {
+    let mut search: Vec<PathBuf> = std::env::split_paths(&path_var).collect();
+    // macOS GUI 进程 PATH 精简，追加登录 shell PATH 与常见 node 安装位置
+    search.extend(extra_search_dirs());
+    for dir in search {
         let base = dir.join(program);
         // Windows：先按 PATHEXT 依次匹配（与 cmd 同语义），再试无扩展名文件。
         // nodejs 目录下同时存在 POSIX sh 脚本（如 npx/npm）与 .cmd，必须优先 .cmd，
@@ -516,4 +605,30 @@ pub fn forward_install_lines(app: &AppHandle) -> impl FnMut(&str) + '_ {
 #[allow(dead_code)]
 pub fn cache_node_info(app: &AppHandle) {
     *app.state::<AppState>().node_info.lock().unwrap() = detect_node().ok();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// macOS GUI 进程（Finder/Dock 启动）只继承精简 PATH。只要电脑上装有 node
+    /// （官方 pkg / brew / nvm / fnm / volta 任一），精简 PATH 下也必须能找到。
+    #[test]
+    #[cfg(target_os = "macos")]
+    fn detects_node_with_finder_like_path() {
+        let orig = std::env::var_os("PATH");
+        let node_on_orig = orig
+            .as_ref()
+            .map(|p| std::env::split_paths(p).any(|d| d.join("node").is_file()))
+            .unwrap_or(false);
+        std::env::set_var("PATH", "/usr/bin:/bin:/usr/sbin:/sbin");
+        let found = find_on_path("node");
+        if let Some(p) = &orig {
+            std::env::set_var("PATH", p);
+        }
+        if node_on_orig {
+            let found = found.expect("精简 PATH 下应能通过 extra_search_dirs 找到 node");
+            assert!(found.is_file(), "找到的 node 应真实存在: {}", found.display());
+        }
+    }
 }
