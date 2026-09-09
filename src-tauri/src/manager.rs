@@ -61,7 +61,14 @@ pub fn emit_status(app: &AppHandle) {
 }
 
 /// Start dsh: ensure node + managed install exist, then spawn the child.
+/// 外部触发的启动（UI / 托盘 / 回调 / 开机自启）视为新一轮，重置崩溃重试预算。
 pub fn start(app: &AppHandle) -> Result<(), String> {
+    app.state::<AppState>().manager.lock().unwrap().crash_retries_left = MAX_CRASH_RETRIES;
+    start_retry(app)
+}
+
+/// 自动重试复用的启动路径：沿用剩余预算，否则重试上限形同虚设。
+fn start_retry(app: &AppHandle) -> Result<(), String> {
     {
         let state = app.state::<AppState>();
         let st = state.manager.lock().unwrap();
@@ -300,10 +307,14 @@ fn monitor_child(app: AppHandle, mut child: Child) {
         log_event(
             &app,
             "info",
-            &format!("{backoff}s 后自动重启 DSH（剩余重试 {retries_left} 次）"),
+            &format!(
+                "{backoff}s 后自动重启 DSH（第 {}/{} 次重试）",
+                MAX_CRASH_RETRIES - retries_left + 1,
+                MAX_CRASH_RETRIES
+            ),
         );
         std::thread::sleep(Duration::from_secs(backoff));
-        let _ = start(&app);
+        let _ = start_retry(&app);
     }
 }
 

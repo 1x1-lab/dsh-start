@@ -75,7 +75,7 @@ impl Default for ManagerState {
             installed_version: None,
             started_at: None,
             last_error: None,
-            crash_retries_left: 0,
+            crash_retries_left: crate::manager::MAX_CRASH_RETRIES,
             last_restart_at: None,
             intentional_stop: Arc::new(AtomicBool::new(false)),
             child_alive: Arc::new(AtomicBool::new(false)),
