@@ -142,7 +142,7 @@ onMounted(async () => {
           </div>
         </template>
         <div v-if="appVersion" class="ver">
-          <span>v{{ appVersion }}</span>
+          <span v-if="!updateAvailable()">v{{ appVersion }}</span>
           <button
             v-if="updateAvailable()"
             class="up-badge"
