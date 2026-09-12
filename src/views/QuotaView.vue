@@ -1,44 +1,152 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import {
   api,
-  toBalanceError,
-  type DeepSeekBalance,
-  type DeepSeekBalanceError,
+  toConfigError,
+  toQuotaError,
+  type ConfigError,
+  type DeepSeekBalanceInfo,
+  type ProviderSummary,
+  type QuotaErrorCode,
+  type QuotaResult,
 } from "../api";
 import { t } from "../i18n";
 
-// ===== 状态（全部为页面内存：离开页面即随组件卸载清空） =====
-const input = ref("");
-const showKey = ref(false);
-const loading = ref(false);
-const data = ref<DeepSeekBalance | null>(null);
-/** 产生 data 的 Key（已 trim），用于识别「同一 Key 刷新」 */
-const dataKey = ref("");
-const lastSuccessAt = ref<Date | null>(null);
-/** 无数据时的失败（首查失败 / 换 Key 后失败） */
-const error = ref<DeepSeekBalanceError | null>(null);
-/** 同一 Key 刷新失败：保留旧数据，仅标注失败 */
-const refreshErr = ref<DeepSeekBalanceError | null>(null);
+// ===== 配置列表（读取 ~/.dsh 下的 settings.yaml / .credentials.yaml） =====
+const loadingList = ref(true);
+const configErr = ref<ConfigError | null>(null);
+const home = ref("");
+const providers = ref<ProviderSummary[]>([]);
 
-/** 请求代数：换 Key / 清除后，在途旧响应一律作废 */
-let gen = 0;
-let inFlightKey = "";
+/** 归一化的卡片数据视图：模板里按 kind 窄化渲染 */
+type DataVM =
+  | { kind: "deep_seek"; isAvailable: boolean; items: DeepSeekBalanceInfo[] }
+  | { kind: "open_router"; total: number; used: number; remaining: number }
+  | { kind: "simple"; balance: number; unit: string | null };
 
-const trimmed = computed(() => input.value.trim());
-const maskedDataKey = computed(() => maskKey(dataKey.value));
-const canClear = computed(
-  () => !!input.value || !!dataKey.value || !!error.value || !!refreshErr.value,
-);
-
-function maskKey(k: string): string {
-  return k.length > 12 ? `${k.slice(0, 6)}…${k.slice(-4)}` : k;
+interface CardState {
+  loading: boolean;
+  data: DataVM | null;
+  lastSuccessAt: Date | null;
+  /** 无数据时的失败（首查失败 / 无 Key / 不支持） */
+  error: QuotaErrorCode | null;
+  errorMessage: string;
+  /** 刷新失败：保留旧数据，仅标注 */
+  refreshErr: QuotaErrorCode | null;
 }
 
-function errText(code: DeepSeekBalanceError["code"]): string {
+const cards = reactive<Record<string, CardState>>({});
+/** 请求代数：重新发起查询后，在途旧响应一律作废 */
+const gens = new Map<string, number>();
+
+function cardOf(id: string): CardState {
+  return (cards[id] ??= {
+    loading: false,
+    data: null,
+    lastSuccessAt: null,
+    error: null,
+    errorMessage: "",
+    refreshErr: null,
+  });
+}
+
+function toVM(r: QuotaResult): DataVM {
+  switch (r.kind) {
+    case "deep_seek":
+      return { kind: "deep_seek", isAvailable: r.is_available, items: r.balance_infos };
+    case "open_router":
+      return {
+        kind: "open_router",
+        total: r.total_credits,
+        used: r.total_usage,
+        remaining: r.remaining,
+      };
+    case "simple":
+      return { kind: "simple", balance: r.balance, unit: r.unit };
+  }
+}
+
+async function loadProviders() {
+  loadingList.value = true;
+  configErr.value = null;
+  try {
+    const list = await api.listQuotaProviders();
+    home.value = list.home;
+    providers.value = list.providers;
+    if (list.providers.length > 0) refreshAll();
+  } catch (e) {
+    configErr.value = toConfigError(e);
+  } finally {
+    loadingList.value = false;
+  }
+}
+
+async function queryOne(p: ProviderSummary) {
+  const card = cardOf(p.id);
+  const seq = (gens.get(p.id) ?? 0) + 1;
+  gens.set(p.id, seq);
+  card.loading = true;
+  card.error = null;
+  card.errorMessage = "";
+  card.refreshErr = null;
+  try {
+    const res = await api.queryProviderQuota(p.id);
+    if (gens.get(p.id) !== seq) return;
+    card.data = toVM(res);
+    card.lastSuccessAt = new Date();
+  } catch (e) {
+    if (gens.get(p.id) !== seq) return;
+    const err = toQuotaError(e);
+    if (card.data) {
+      // 刷新失败：保留上次成功结果
+      card.refreshErr = err.code;
+    } else {
+      card.error = err.code;
+      card.errorMessage = err.message;
+    }
+  } finally {
+    if (gens.get(p.id) === seq) card.loading = false;
+  }
+}
+
+function refreshAll() {
+  for (const p of providers.value) void queryOne(p);
+}
+
+onMounted(loadProviders);
+
+// ===== 展示辅助 =====
+const view = computed(() => providers.value.map((p) => ({ p, card: cardOf(p.id) })));
+const sourceText = computed(() => t("quota.source", { home: home.value || "~/.dsh" }));
+const configErrText = computed(() =>
+  configErr.value
+    ? configErr.value.code === "not_found"
+      ? t("quota.configNotFound", { path: home.value || "~/.dsh" })
+      : t("quota.configFailed")
+    : "",
+);
+
+function hostOf(url: string | null): string {
+  if (!url) return "";
+  try {
+    return new URL(url).host;
+  } catch {
+    return url;
+  }
+}
+
+function fmtAmount(n: number): string {
+  return n.toLocaleString(undefined, { maximumFractionDigits: 4 });
+}
+
+function errText(code: QuotaErrorCode | null): string {
   switch (code) {
-    case "empty":
-      return t("quota.err.empty");
+    case "no_key":
+      return t("quota.err.no_key");
+    case "unsupported":
+      return t("quota.err.unsupported");
+    case "config":
+      return t("quota.err.config");
     case "invalid_input":
       return t("quota.err.invalid_input");
     case "auth_failed":
@@ -55,186 +163,160 @@ function errText(code: DeepSeekBalanceError["code"]): string {
       return t("quota.err.unknown");
   }
 }
-
-const errorMsg = computed(() => (error.value ? errText(error.value.code) : ""));
-/** 后端附带的技术性详情（不含 Key），与映射文案不同时才展示 */
-const errorDetail = computed(() => {
-  const m = error.value?.message.trim() ?? "";
-  return m && m !== errorMsg.value ? m : "";
-});
-const refreshBanner = computed(() =>
-  refreshErr.value
-    ? t("quota.refreshFailed", { reason: errText(refreshErr.value.code) })
-    : "",
-);
-const lastSuccessText = computed(() =>
-  lastSuccessAt.value
-    ? t("quota.lastSuccess", { time: lastSuccessAt.value.toLocaleString() })
-    : "",
-);
-
-// 同一 Key 的在途请求直接忽略（防重复提交）；换 Key 后允许立即重新查询
-const queryDisabled = computed(
-  () => !trimmed.value || (loading.value && trimmed.value === inFlightKey),
-);
-const queryLabel = computed(() => {
-  if (loading.value && trimmed.value === inFlightKey) return t("quota.refreshing");
-  // 已展示同一 Key 的结果 → 按钮语义为刷新
-  if (data.value && dataKey.value === trimmed.value) return t("quota.refresh");
-  return t("quota.query");
-});
-
-async function query() {
-  const key = trimmed.value;
-  if (!key) {
-    error.value = { code: "empty", message: t("quota.err.empty") };
-    return;
-  }
-  if (queryDisabled.value) return;
-
-  const seq = ++gen;
-  inFlightKey = key;
-  loading.value = true;
-  error.value = null;
-  refreshErr.value = null;
-  try {
-    const res = await api.getDeepSeekBalance(key);
-    // 期间换过 Key / 清除 / 发起了更新的查询 → 旧响应作废
-    if (seq !== gen || trimmed.value !== key) return;
-    data.value = res;
-    dataKey.value = key;
-    lastSuccessAt.value = new Date();
-  } catch (e) {
-    if (seq !== gen || trimmed.value !== key) return;
-    const err = toBalanceError(e);
-    if (data.value && dataKey.value === key) {
-      // 同一 Key 刷新失败：保留旧余额，标注失败原因与上次成功时间
-      refreshErr.value = err;
-    } else {
-      data.value = null;
-      dataKey.value = "";
-      lastSuccessAt.value = null;
-      error.value = err;
-    }
-  } finally {
-    if (seq === gen) loading.value = false;
-  }
-}
-
-function clearAll() {
-  gen++; // 在途请求全部作废
-  input.value = "";
-  showKey.value = false;
-  loading.value = false;
-  data.value = null;
-  dataKey.value = "";
-  lastSuccessAt.value = null;
-  error.value = null;
-  refreshErr.value = null;
-}
 </script>
 
 <template>
   <div class="grid-12">
+    <!-- 顶部:数据来源 + 全部刷新 -->
     <div class="card s12">
-      <h3 class="card-title">{{ t("quota.key") }}</h3>
-      <div class="key-row">
-        <input
-          v-model="input"
-          class="key-input"
-          :type="showKey ? 'text' : 'password'"
-          :placeholder="t('quota.keyPlaceholder')"
-          spellcheck="false"
-          autocomplete="off"
-          @keyup.enter="query"
-        />
-        <button class="btn mini" @click="showKey = !showKey">
-          {{ showKey ? t("quota.hide") : t("quota.show") }}
+      <h3 class="card-title">
+        {{ t("quota.source.title") }}
+        <button
+          class="btn primary r"
+          :disabled="loadingList || providers.length === 0"
+          @click="refreshAll"
+        >
+          {{ t("quota.refreshAll") }}
         </button>
-        <button class="btn primary" :disabled="queryDisabled" @click="query">
-          {{ queryLabel }}
-        </button>
-        <button class="btn danger" :disabled="!canClear" @click="clearAll">
-          {{ t("quota.clear") }}
-        </button>
-      </div>
-      <p class="note" style="margin: 10px 0 0">{{ t("quota.memoryNote") }}</p>
-      <p v-if="error" class="err">
-        {{ errorMsg }}
-        <span v-if="errorDetail" class="err-detail">{{ errorDetail }}</span>
+      </h3>
+      <p class="note" style="margin: 8px 0 0">{{ sourceText }}</p>
+      <p class="note">{{ t("quota.privacyNote") }}</p>
+      <p v-if="configErr" class="err">
+        {{ configErrText }}
+        <span v-if="configErr?.message" class="err-detail">{{ configErr.message }}</span>
       </p>
     </div>
 
-    <div class="card s12">
+    <div v-if="loadingList" class="card s12">
+      <p class="note">{{ t("quota.loadingList") }}</p>
+    </div>
+
+    <div v-else-if="!configErr && providers.length === 0" class="card s12">
+      <p class="note">{{ t("quota.emptyConfig") }}</p>
+    </div>
+
+    <!-- 每个 API 一张卡片 -->
+    <div v-for="{ p, card } in view" :key="p.id" class="card s12">
       <h3 class="card-title">
-        {{ t("quota.result.title") }}
-        <span v-if="dataKey" class="r">{{ t("quota.dataFor", { k: maskedDataKey }) }}</span>
+        {{ p.displayName }}
+        <button class="btn mini r" :disabled="card.loading" @click="queryOne(p)">
+          {{ card.loading ? t("quota.refreshing") : t("quota.refresh") }}
+        </button>
       </h3>
 
-      <!-- 同 Key 刷新失败：保留旧数据并标注 -->
-      <div v-if="refreshBanner" class="banner">{{ refreshBanner }}</div>
+      <div class="meta">
+        <span class="mono-chip">{{ p.protocol ?? t("quota.protocolUnknown") }}</span>
+        <span v-if="p.baseUrl" class="host">{{ hostOf(p.baseUrl) }}</span>
+        <span v-if="p.maskedKey" class="key-mask">{{ t("quota.keyMasked", { k: p.maskedKey }) }}</span>
+        <span v-else class="key-missing">
+          {{ p.apiKeyEnv ? t("quota.keyMissing", { env: p.apiKeyEnv }) : t("quota.keyMissingNoEnv") }}
+        </span>
+      </div>
 
-      <template v-if="data">
-        <template v-if="data.balance_infos.length > 0">
-          <!-- 按币种逐项展示，不做跨币种合计 -->
-          <div
-            v-for="(b, i) in data.balance_infos"
-            :key="b.currency + i"
-            class="bal"
-            :class="{ split: i > 0 }"
-          >
-            <div class="bal-head">
-              <span class="mono-chip">{{ b.currency }}</span>
-              <span class="avail" :class="data.is_available ? 'ok' : 'bad'">
-                {{ data.is_available ? t("quota.available.ok") : t("quota.available.bad") }}
-              </span>
+      <!-- 刷新失败:保留旧数据并标注 -->
+      <div v-if="card.refreshErr" class="banner">
+        {{ t("quota.refreshFailed", { reason: errText(card.refreshErr) }) }}
+      </div>
+
+      <template v-if="card.data">
+        <!-- DeepSeek 官方:按币种逐项 -->
+        <template v-if="card.data.kind === 'deep_seek'">
+          <template v-if="card.data.items.length > 0">
+            <div
+              v-for="(b, i) in card.data.items"
+              :key="b.currency + i"
+              class="bal"
+              :class="{ split: i > 0 }"
+            >
+              <div class="bal-head">
+                <span class="mono-chip">{{ b.currency }}</span>
+                <span class="avail" :class="card.data.isAvailable ? 'ok' : 'bad'">
+                  {{ card.data.isAvailable ? t("quota.available.ok") : t("quota.available.bad") }}
+                </span>
+              </div>
+              <div class="line">
+                <div>{{ t("quota.total") }}</div>
+                <b class="amount">{{ b.total_balance }} {{ b.currency }}</b>
+              </div>
+              <div class="line">
+                <div>{{ t("quota.granted") }}</div>
+                <b class="amount dim">{{ b.granted_balance }} {{ b.currency }}</b>
+              </div>
+              <div class="line">
+                <div>{{ t("quota.toppedUp") }}</div>
+                <b class="amount dim">{{ b.topped_up_balance }} {{ b.currency }}</b>
+              </div>
             </div>
-            <div class="line">
-              <div>{{ t("quota.total") }}</div>
-              <b class="amount">{{ b.total_balance }} {{ b.currency }}</b>
-            </div>
-            <div class="line">
-              <div>{{ t("quota.granted") }}</div>
-              <b class="amount dim">{{ b.granted_balance }} {{ b.currency }}</b>
-            </div>
-            <div class="line">
-              <div>{{ t("quota.toppedUp") }}</div>
-              <b class="amount dim">{{ b.topped_up_balance }} {{ b.currency }}</b>
-            </div>
+          </template>
+          <p v-else class="note">{{ t("quota.emptyResult") }}</p>
+        </template>
+
+        <!-- OpenRouter:总额度 / 已用 / 剩余 -->
+        <template v-else-if="card.data.kind === 'open_router'">
+          <div class="line">
+            <div>{{ t("quota.orTotal") }}</div>
+            <b class="amount dim">{{ fmtAmount(card.data.total) }} USD</b>
+          </div>
+          <div class="line">
+            <div>{{ t("quota.orUsed") }}</div>
+            <b class="amount dim">{{ fmtAmount(card.data.used) }} USD</b>
+          </div>
+          <div class="line">
+            <div>{{ t("quota.orRemaining") }}</div>
+            <b class="amount" :class="{ neg: card.data.remaining <= 0 }">
+              {{ fmtAmount(card.data.remaining) }} USD
+            </b>
           </div>
         </template>
-        <p v-else class="note">{{ t("quota.emptyResult") }}</p>
-        <p v-if="lastSuccessText" class="note last">{{ lastSuccessText }}</p>
+
+        <!-- 其他单一余额端点 -->
+        <template v-else>
+          <div class="line">
+            <div>{{ t("quota.balance") }}</div>
+            <b class="amount" :class="{ neg: card.data.balance <= 0 }">
+              {{ fmtAmount(card.data.balance) }}
+              <template v-if="card.data.unit">{{ card.data.unit }}</template>
+            </b>
+          </div>
+        </template>
+
+        <p v-if="card.lastSuccessAt" class="note last">
+          {{ t("quota.lastSuccess", { time: card.lastSuccessAt.toLocaleString() }) }}
+        </p>
       </template>
 
-      <p v-else-if="loading" class="note">{{ t("quota.loading") }}</p>
-      <p v-else-if="!error" class="note">{{ t("quota.idle") }}</p>
+      <p v-else-if="card.loading" class="note">{{ t("quota.loading") }}</p>
+      <p v-else-if="card.error" class="err">
+        {{ errText(card.error) }}
+        <span v-if="card.errorMessage" class="err-detail">{{ card.errorMessage }}</span>
+      </p>
     </div>
   </div>
 </template>
 
 <style scoped>
-.key-row {
+.meta {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 8px;
+  margin-bottom: 8px;
 }
-.key-input {
-  flex: 1;
-  min-width: 0;
-  background: #fff;
-  border: 1px solid rgba(0, 0, 0, 0.12);
-  color: var(--text);
-  border-radius: 7px;
-  padding: 6px 10px;
-  font-size: 12.5px;
+.host {
+  font-size: 11.5px;
+  color: var(--text-dim);
   font-family: ui-monospace, "SF Mono", Consolas, monospace;
-  outline: none;
+}
+.key-mask {
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
   user-select: text;
 }
-.key-input:focus {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px rgba(94, 106, 210, 0.15);
+.key-missing {
+  font-size: 11.5px;
+  color: var(--yellow);
+  font-weight: 550;
 }
 
 .err {
@@ -288,6 +370,9 @@ function clearAll() {
 .amount.dim {
   font-weight: 550;
   color: var(--text-dim);
+}
+.amount.neg {
+  color: var(--red);
 }
 .last {
   margin-top: 10px;

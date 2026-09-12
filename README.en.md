@@ -19,7 +19,7 @@
 - 🎛️ **Configurable control port**: defaults to DSH port + 1, auto-scans the next 10 ports when occupied, or pin your own in Settings — rebinds instantly on save. Port conflicts solved
 - 🔄 **Smart updates**: the "Update to vX.X.X" button only appears when the npm registry actually has a newer version
 - 🖥️ **Console**: stat cards (port / control port / version / uptime), start / stop / restart, live logs (in-memory ring + rolling file)
-- 💰 **Balance query**: paste your DeepSeek API key to check account balance (total / granted / topped-up, currency, API-call availability). The Rust backend calls the official `GET /user/balance` directly — fully independent of the DSH process, works even when DSH isn't running. The key lives only in page memory: it's discarded when you leave the page or quit the app, never written to disk or logs
+- 💰 **Quota query**: reads the DSH configuration (`~/.dsh/settings.yaml` + `.credentials.yaml`, honoring `DSH_HOME`), lists every configured API automatically (DeepSeek Official + `llm-pi-ai.providers` catalog / custom gateways), and queries per API type: DeepSeek shows per-currency total / granted / topped-up balance, OpenRouter shows total credits / used / remaining, StepFun / SiliconFlow / Novita use their official endpoints, other OpenAI-protocol endpoints fall back to the generic query (`GET {baseURL}/user/balance`), and Anthropic-protocol APIs are not supported yet. Requests are issued by the Rust backend and work even when DSH isn't running. Keys are resolved only inside Rust (env vars → credentials file refs, same priority as DSH); the UI shows masked keys only — nothing written to disk or logs
 - 🪟 **Acrylic UI**: transparent window with real system blur, Linear-style two-layer layout, custom titlebar, double-click to maximize
 - 🧷 **System tray**: left-click toggles show/hide, right-click menu with status-aware items (external instances are read-only); closing the window minimizes to tray
 - 🌍 **Bilingual**: Chinese ⇄ English in Settings — UI and tray menu switch together; more languages easy to add
@@ -46,7 +46,7 @@ npm run tauri:build
    - Enable "Auto Start": starts now and on every login
    - Click "Start DSH" on the console
 3. "Open DSH Console" opens `http://127.0.0.1:3080` in your system browser (port configurable)
-4. "Quota" lets you check your DeepSeek account balance with an API key created on the [DeepSeek platform](https://platform.deepseek.com). The key is kept only in the page's memory — leaving the page or quitting the app discards it; nothing is written to disk or logs
+4. "Quota" reads the DSH configuration, lists every configured API and queries its balance automatically. Configure the credential for each API in DSH first (`apiKeyEnv` → `.credentials.yaml` refs or env vars). Every query re-reads the configuration live, so changes in DSH take effect immediately
 5. Closing the window minimizes to tray; quit via the tray menu 🚪
 
 ## 📞 Callback Restart
@@ -67,7 +67,8 @@ src-tauri/
     manager.rs      Process hosting: spawn / monitor / backoff restart / readiness & external probes
     runtime.rs      Node detection + managed npm install + version resolve / update check
     control.rs      127.0.0.1 control HTTP endpoint (rebindable + port-conflict fallback)
-    balance.rs      DeepSeek balance query: official API call / response parsing / structured errors
+    dshconf.rs      DSH configuration reader: settings.yaml / .credentials.yaml parsing, API list & key masking
+    quota.rs        Quota query: provider detection by baseURL / generic OpenAI-protocol query / structured errors
     cli.rs          dsh-start restart callback shim & PATH registration
     tray.rs         Tray: status text / bilingual menu / status-aware items
     commands.rs / settings.rs / logger.rs / state.rs
@@ -84,7 +85,7 @@ Artifacts: Windows NSIS installer, macOS dmg, Linux deb / AppImage.
 - The control endpoint binds `127.0.0.1` only; CORS allows just `http://127.0.0.1:<dsh-port>` / `http://localhost:<dsh-port>`
 - v1 has no auth and exposes only two verbs: `status` and `restart`
 - DSH user data (default `~/.dsh`, governed by `DSH_HOME`) lives apart from this app's managed directory — we only manage the process and installation
-- The balance-query API key exists only in the current page's memory: never written to localStorage, settings.json or logs. Requests go straight to the official DeepSeek endpoint; logs and error messages never contain the key
+- Quota-query API keys are resolved only inside Rust (env vars → `~/.dsh/.credentials.yaml` refs) and the full key is never sent back to the UI: only masked forms are displayed. Nothing is written to localStorage, settings.json or logs, and error messages never contain the key
 
 ## 📄 License
 

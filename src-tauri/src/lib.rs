@@ -1,9 +1,10 @@
-mod balance;
 mod cli;
+mod dshconf;
 mod commands;
 mod control;
 mod logger;
 mod manager;
+mod quota;
 mod runtime;
 mod settings;
 mod state;
@@ -52,7 +53,8 @@ pub fn run() {
             commands::get_callback_info,
             commands::open_log_file,
             commands::open_dir,
-            commands::get_deepseek_balance,
+            commands::list_quota_providers,
+            commands::query_provider_quota,
         ])
         .setup(|app| {
             let handle = app.handle().clone();

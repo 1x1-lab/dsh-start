@@ -62,7 +62,34 @@ export interface CallbackInfo {
   cliCmd: string;
 }
 
-/** 单个币种的余额信息；字段与官方 /user/balance 响应保持一致，金额为字符串精度 */
+/** DSH 配置中的一个 API(供应商路由)概要;Key 只含脱敏形式 */
+export interface ProviderSummary {
+  id: string;
+  displayName: string;
+  /** 线缆协议:openai-completions / openai-responses / anthropic-messages;无法确定时为 null */
+  protocol: string | null;
+  baseUrl: string | null;
+  /** 凭据环境变量名(settings.yaml 的 apiKeyEnv,目录路由用内置缺省值) */
+  apiKeyEnv: string;
+  keyConfigured: boolean;
+  /** 脱敏 Key(未配置时为 null) */
+  maskedKey: string | null;
+}
+
+/** 额度页数据源:DSH 配置根目录 + API 列表 */
+export interface ProviderList {
+  home: string;
+  providers: ProviderSummary[];
+}
+
+export type ConfigErrorCode = "not_found" | "parse_failed";
+
+export interface ConfigError {
+  code: ConfigErrorCode;
+  message: string;
+}
+
+/** 单个币种的余额信息;字段与 DeepSeek 官方 /user/balance 响应保持一致,金额为字符串精度 */
 export interface DeepSeekBalanceInfo {
   currency: string;
   total_balance: string;
@@ -70,31 +97,35 @@ export interface DeepSeekBalanceInfo {
   topped_up_balance: string;
 }
 
-/** 官方 /user/balance 响应结构（保持上游字段名） */
-export interface DeepSeekBalance {
-  is_available: boolean;
-  balance_infos: DeepSeekBalanceInfo[];
-}
+/** 查询结果:按供应商类型分别承载不同的信息 */
+export type QuotaResult =
+  | { kind: "deep_seek"; is_available: boolean; balance_infos: DeepSeekBalanceInfo[] }
+  | { kind: "open_router"; total_credits: number; total_usage: number; remaining: number }
+  | { kind: "simple"; balance: number; unit: string | null };
 
-export type DeepSeekBalanceErrorCode =
+export type QuotaErrorCode =
   | "invalid_input"
+  | "no_key"
+  | "unsupported"
+  | "config"
   | "auth_failed"
   | "rate_limited"
   | "network"
   | "server"
   | "bad_response"
-  /** 前端本地：未输入 Key */
-  | "empty"
-  /** 前端兜底：无法识别的拒绝值 */
+  /** 前端兜底:无法识别的拒绝值 */
   | "unknown";
 
-export interface DeepSeekBalanceError {
-  code: DeepSeekBalanceErrorCode;
+export interface QuotaError {
+  code: QuotaErrorCode;
   message: string;
 }
 
-const BALANCE_ERROR_CODES: readonly string[] = [
+const QUOTA_ERROR_CODES: readonly string[] = [
   "invalid_input",
+  "no_key",
+  "unsupported",
+  "config",
   "auth_failed",
   "rate_limited",
   "network",
@@ -102,19 +133,31 @@ const BALANCE_ERROR_CODES: readonly string[] = [
   "bad_response",
 ];
 
-/** 把 invoke 的拒绝值归一为结构化错误（后端崩溃串、意外对象等兜底为 unknown） */
-export function toBalanceError(e: unknown): DeepSeekBalanceError {
+/** 把 invoke 的拒绝值归一为结构化错误(后端崩溃串、意外对象等兜底为 unknown) */
+export function toQuotaError(e: unknown): QuotaError {
   if (e && typeof e === "object" && "code" in e) {
     const code = (e as { code: unknown }).code;
-    if (typeof code === "string" && BALANCE_ERROR_CODES.includes(code)) {
+    if (typeof code === "string" && QUOTA_ERROR_CODES.includes(code)) {
       const message = (e as { message?: unknown }).message;
       return {
-        code: code as DeepSeekBalanceErrorCode,
+        code: code as QuotaErrorCode,
         message: typeof message === "string" ? message : "",
       };
     }
   }
   return { code: "unknown", message: String(e) };
+}
+
+/** 把 invoke 的拒绝值归一为配置错误(意外对象兜底为 parse_failed) */
+export function toConfigError(e: unknown): ConfigError {
+  if (e && typeof e === "object" && "code" in e) {
+    const code = (e as { code: unknown }).code;
+    const message = (e as { message?: unknown }).message;
+    if (code === "not_found" || code === "parse_failed") {
+      return { code, message: typeof message === "string" ? message : "" };
+    }
+  }
+  return { code: "parse_failed", message: String(e) };
 }
 
 export const api = {
@@ -142,6 +185,7 @@ export const api = {
   getCallbackInfo: () => invoke<CallbackInfo>("get_callback_info"),
   openLogFile: () => invoke<void>("open_log_file"),
   openDir: (path: string) => invoke<void>("open_dir", { path }),
-  getDeepSeekBalance: (apiKey: string) =>
-    invoke<DeepSeekBalance>("get_deepseek_balance", { apiKey }),
+  listQuotaProviders: () => invoke<ProviderList>("list_quota_providers"),
+  queryProviderQuota: (providerId: string) =>
+    invoke<QuotaResult>("query_provider_quota", { providerId }),
 };

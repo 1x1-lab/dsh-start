@@ -21,6 +21,8 @@ tauri-plugin-autostart = "2.5.1"
 tauri-plugin-opener = "2.5.4"
 serde = { version = "1.0.229", features = ["derive"] }
 serde_json = "1.0.151"
+# DSH 用户配置(settings.yaml / .credentials.yaml)解析
+serde_yaml = "0.9"
 log = { version = "0.4.33", features = ["std"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 # DeepSeek 余额查询：JSON + rustls（webpki 内置根证书，不依赖系统 OpenSSL）

@@ -2,8 +2,9 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 
-use crate::balance;
+use crate::dshconf;
 use crate::manager;
+use crate::quota;
 use crate::runtime;
 use crate::settings::{self, Settings};
 use crate::state::{AppState, DshStatus};
@@ -434,12 +435,38 @@ pub fn open_dir(path: String) -> Result<(), String> {
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| e.to_string())
 }
 
-/// 查询 DeepSeek 账户余额：走官方 API，独立于 DSH 进程（DSH 未启动也可用）。
-/// 异步执行不阻塞 UI；错误为结构化 BalanceError，由前端按 code 映射双语提示。
+/// 列出 DSH 配置中的全部 API（供应商路由）；纯磁盘读取，DSH 未启动也可用。
+/// 配置缺失 / 解析失败返回结构化 ConfigError，由前端展示引导态。
 #[tauri::command]
-pub async fn get_deepseek_balance(
-    api_key: String,
-) -> Result<balance::DeepSeekBalance, balance::BalanceError> {
-    let key = balance::validate_key(&api_key)?;
-    balance::fetch_balance(&key).await
+pub fn list_quota_providers() -> Result<dshconf::ProviderList, dshconf::ConfigError> {
+    dshconf::list_providers(&dshconf::dsh_home())
+}
+
+/// 查询某个 API 的额度：每次实时重读 DSH 配置与凭据，配置改动即刻生效。
+/// 异步执行不阻塞 UI；错误为结构化 QuotaError，由前端按 code 映射双语提示。
+#[tauri::command]
+pub async fn query_provider_quota(
+    provider_id: String,
+) -> Result<quota::QuotaResult, quota::QuotaError> {
+    let home = dshconf::dsh_home();
+    let list = dshconf::list_providers(&home)?;
+    let p = list
+        .providers
+        .iter()
+        .find(|p| p.id == provider_id)
+        .ok_or_else(|| {
+            quota::QuotaError::new(quota::QuotaErrorCode::InvalidInput, "未找到指定的 API")
+        })?
+        .clone();
+    let key = dshconf::resolve_key(&home, &p.api_key_env).ok_or_else(|| {
+        quota::QuotaError::new(
+            quota::QuotaErrorCode::NoKey,
+            if p.api_key_env.is_empty() {
+                "该 API 未配置 apiKeyEnv，无法解析凭据".to_string()
+            } else {
+                format!("未配置凭据({})", p.api_key_env)
+            },
+        )
+    })?;
+    quota::query_provider(&p, &key).await
 }
