@@ -62,6 +62,61 @@ export interface CallbackInfo {
   cliCmd: string;
 }
 
+/** 单个币种的余额信息；字段与官方 /user/balance 响应保持一致，金额为字符串精度 */
+export interface DeepSeekBalanceInfo {
+  currency: string;
+  total_balance: string;
+  granted_balance: string;
+  topped_up_balance: string;
+}
+
+/** 官方 /user/balance 响应结构（保持上游字段名） */
+export interface DeepSeekBalance {
+  is_available: boolean;
+  balance_infos: DeepSeekBalanceInfo[];
+}
+
+export type DeepSeekBalanceErrorCode =
+  | "invalid_input"
+  | "auth_failed"
+  | "rate_limited"
+  | "network"
+  | "server"
+  | "bad_response"
+  /** 前端本地：未输入 Key */
+  | "empty"
+  /** 前端兜底：无法识别的拒绝值 */
+  | "unknown";
+
+export interface DeepSeekBalanceError {
+  code: DeepSeekBalanceErrorCode;
+  message: string;
+}
+
+const BALANCE_ERROR_CODES: readonly string[] = [
+  "invalid_input",
+  "auth_failed",
+  "rate_limited",
+  "network",
+  "server",
+  "bad_response",
+];
+
+/** 把 invoke 的拒绝值归一为结构化错误（后端崩溃串、意外对象等兜底为 unknown） */
+export function toBalanceError(e: unknown): DeepSeekBalanceError {
+  if (e && typeof e === "object" && "code" in e) {
+    const code = (e as { code: unknown }).code;
+    if (typeof code === "string" && BALANCE_ERROR_CODES.includes(code)) {
+      const message = (e as { message?: unknown }).message;
+      return {
+        code: code as DeepSeekBalanceErrorCode,
+        message: typeof message === "string" ? message : "",
+      };
+    }
+  }
+  return { code: "unknown", message: String(e) };
+}
+
 export const api = {
   getStatus: () => invoke<StatusPayload>("get_status"),
   startDsh: () => invoke<void>("start_dsh"),
@@ -87,4 +142,6 @@ export const api = {
   getCallbackInfo: () => invoke<CallbackInfo>("get_callback_info"),
   openLogFile: () => invoke<void>("open_log_file"),
   openDir: (path: string) => invoke<void>("open_dir", { path }),
+  getDeepSeekBalance: (apiKey: string) =>
+    invoke<DeepSeekBalance>("get_deepseek_balance", { apiKey }),
 };

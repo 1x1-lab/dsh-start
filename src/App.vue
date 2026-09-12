@@ -12,6 +12,7 @@ import { toast } from "./toast";
 import { RELEASES_URL, appUpdate, checkAppUpdate, updateAvailable } from "./update";
 import Dashboard from "./views/Dashboard.vue";
 import LogsView from "./views/LogsView.vue";
+import QuotaView from "./views/QuotaView.vue";
 import SettingsView from "./views/SettingsView.vue";
 import SetupWizard from "./views/SetupWizard.vue";
 
@@ -31,7 +32,7 @@ function onTitlebarDown(e: MouseEvent) {
   void appWindow.startDragging();
 }
 
-type Tab = "console" | "logs" | "settings";
+type Tab = "console" | "logs" | "quota" | "settings";
 const tab = ref<Tab>("console");
 
 const showWizard = computed(() => {
@@ -61,7 +62,10 @@ const navGroups = computed(
     },
     {
       label: t("nav.group.app"),
-      items: [{ id: "settings", label: t("nav.settings"), icon: "⚙" }],
+      items: [
+        { id: "quota", label: t("nav.quota"), icon: "¥" },
+        { id: "settings", label: t("nav.settings"), icon: "⚙" },
+      ],
     },
   ],
 );
@@ -71,6 +75,7 @@ const head = computed(
     ({
       console: { t: t("head.console.t"), s: t("head.console.s") },
       logs: { t: t("head.logs.t"), s: t("head.logs.s") },
+      quota: { t: t("head.quota.t"), s: t("head.quota.s") },
       settings: { t: t("head.settings.t"), s: t("head.settings.s") },
     })[tab.value],
 );
@@ -171,6 +176,7 @@ onMounted(async () => {
         <div class="canvas">
           <Dashboard v-if="tab === 'console'" />
           <LogsView v-else-if="tab === 'logs'" />
+          <QuotaView v-else-if="tab === 'quota'" />
           <SettingsView v-else />
         </div>
       </div>

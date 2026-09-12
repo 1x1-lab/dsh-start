@@ -19,6 +19,7 @@
 - 🎛️ **控制端口可配置**：默认 = DSH 端口 + 1，被占用自动后移 10 个端口扫描，也可在设置里指定，保存立即重绑——端口冲突不再是事儿
 - 🔄 **智能更新**：仅当 npm registry 上确有新版本时才出现「更新到 vX.X.X」按钮
 - 🖥️ **托管控制台**：状态卡（端口 / 控制端口 / 版本 / 运行时长）、启动 / 停止 / 重启、实时日志（内存环形 + 滚动文件）
+- 💰 **额度查询**：输入 DeepSeek API Key 即可查询账户余额（总可用 / 赠送 / 充值、币种、是否可调用 API）；由 Rust 侧直连官方 `GET /user/balance`，独立于 DSH 进程，DSH 未启动也可用。Key 仅存于页面内存，离开页面或退出应用即清除，不落盘、不入日志
 - 🪟 **毛玻璃 UI**：透明亚克力窗口 + Linear 风格双层布局，自定义标题栏，双击最大化
 - 🧷 **系统托盘**：左键单击唤出 / 最小化，右键菜单按状态智能启停（外部实例只读不管）；关闭窗口最小化到托盘
 - 🌍 **中英双语**：设置页一键切换，界面 + 托盘菜单同步，后续可加更多语言
@@ -45,7 +46,8 @@ npm run tauri:build
    - 勾选「开机启动」：立即启动，以后随系统登录自启
    - 控制台点击「启动 DSH」手动启动
 3. 「打开 DSH 控制台」在系统浏览器打开 `http://127.0.0.1:3080`（端口可在设置修改）
-4. 关闭窗口 → 最小化到托盘；退出请用托盘菜单「退出」🚪
+4. 「额度查询」输入你的 DeepSeek API Key（在 [DeepSeek 平台](https://platform.deepseek.com) 创建）即可查询账户余额；Key 仅保存在当前页面内存中，离开页面或退出应用后即被清除，不会写入磁盘或日志
+5. 关闭窗口 → 最小化到托盘；退出请用托盘菜单「退出」🚪
 
 ## 📞 回调重启
 
@@ -59,12 +61,13 @@ npm run tauri:build
 ## 🗂️ 目录结构
 
 ```
-src/                Vue 前端（控制台 / 向导 / 日志 / 设置 / i18n）
+src/                Vue 前端（控制台 / 向导 / 日志 / 额度查询 / 设置 / i18n）
 src-tauri/
   src/
     manager.rs      进程托管：生成 / 监控 / 退避重启 / 就绪探测 / 外部实例探测
     runtime.rs      Node 检测 + 托管 npm install + 版本解析 / 检查更新
     control.rs      127.0.0.1 控制 HTTP 端点（可重绑定 + 端口冲突回退）
+    balance.rs      DeepSeek 余额查询：官方 API 请求 / 响应解析 / 结构化错误
     cli.rs          dsh-start restart 回调 shim 与 PATH 注册
     tray.rs         托盘：状态文案 / 双语菜单 / 按状态启停
     commands.rs / settings.rs / logger.rs / state.rs
@@ -81,6 +84,7 @@ GitHub Actions 三平台构建（`.github/workflows/build.yml`）：push 跑 CI�
 - 控制端点仅绑定 `127.0.0.1`，CORS 仅放行 `http://127.0.0.1:<DSH端口>` / `http://localhost:<DSH端口>`
 - 控制端点 v1 无鉴权，只提供 `status` 与 `restart` 两个动词
 - DSH 用户数据（默认 `~/.dsh`，由 `DSH_HOME` 决定）与本应用托管目录分离，本应用只管进程与安装
+- 「额度查询」的 API Key 仅存在于当前页面内存，不写入 localStorage、settings.json 或日志；请求直连 DeepSeek 官方地址，日志与错误信息均不包含 Key
 
 ## 📄 许可证
 

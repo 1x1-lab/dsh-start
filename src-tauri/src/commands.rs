@@ -2,6 +2,7 @@ use serde::Serialize;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Emitter, Manager};
 
+use crate::balance;
 use crate::manager;
 use crate::runtime;
 use crate::settings::{self, Settings};
@@ -431,4 +432,14 @@ pub fn open_log_file(app: AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn open_dir(path: String) -> Result<(), String> {
     tauri_plugin_opener::open_path(path, None::<&str>).map_err(|e| e.to_string())
+}
+
+/// 查询 DeepSeek 账户余额：走官方 API，独立于 DSH 进程（DSH 未启动也可用）。
+/// 异步执行不阻塞 UI；错误为结构化 BalanceError，由前端按 code 映射双语提示。
+#[tauri::command]
+pub async fn get_deepseek_balance(
+    api_key: String,
+) -> Result<balance::DeepSeekBalance, balance::BalanceError> {
+    let key = balance::validate_key(&api_key)?;
+    balance::fetch_balance(&key).await
 }
