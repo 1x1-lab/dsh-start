@@ -21,5 +21,9 @@ npm-debug.log*
 !.vscode/extensions.json
 .idea/
 .claude/
+.zcode/
 .DS_Store
 Thumbs.db
+
+# local session sample data
+*.jsonl
