@@ -365,6 +365,17 @@ fn extract_reset_time(v: Option<&Value>) -> Option<String> {
     }
 }
 
+/// 套餐窗口统一展示顺序：5 小时 → 每周 → 每月，与各接口的返回顺序无关
+fn sort_tiers(tiers: &mut Vec<QuotaTier>) {
+    let rank = |name: &str| match name {
+        "five_hour" => 0,
+        "weekly" => 1,
+        "monthly" => 2,
+        _ => 3,
+    };
+    tiers.sort_by_key(|t| rank(&t.name));
+}
+
 /// Kimi For Coding：顶层 `usage`（每周窗口）+ `limits[].detail`（5 小时窗口），
 /// 每项 `limit` / `remaining` / `resetTime`
 fn parse_kimi_plan(v: &Value) -> Result<QuotaResult, QuotaError> {
@@ -388,6 +399,7 @@ fn parse_kimi_plan(v: &Value) -> Result<QuotaResult, QuotaError> {
             "响应缺少套餐用量数据",
         ));
     }
+    sort_tiers(&mut tiers);
     Ok(QuotaResult::Plan { name: None, tiers })
 }
 
@@ -464,6 +476,7 @@ fn parse_zhipu_plan(v: &Value) -> Result<QuotaResult, QuotaError> {
             "响应缺少套餐用量数据",
         ));
     }
+    sort_tiers(&mut tiers);
     Ok(QuotaResult::Plan { name, tiers })
 }
 
@@ -508,6 +521,7 @@ fn parse_minimax_plan(v: &Value) -> Result<QuotaResult, QuotaError> {
             "响应缺少套餐用量数据",
         ));
     }
+    sort_tiers(&mut tiers);
     Ok(QuotaResult::Plan { name: None, tiers })
 }
 
@@ -710,14 +724,14 @@ mod tests {
             panic!("wrong variant");
         };
         assert!(name.is_none());
-        assert_eq!(tiers.len(), 2);
-        assert_eq!(tiers[0].name, "weekly");
-        assert_eq!(tiers[0].used, Some(750.0));
-        assert_eq!(tiers[0].total, Some(1000.0));
-        assert_eq!(tiers[0].utilization, 75.0);
+        // 窗口顺序统一为 5 小时在前(接口里 usage/每周 在前)
+        assert_eq!(tiers[0].name, "five_hour");
+        assert_eq!(tiers[0].used, Some(90.0));
+        assert_eq!(tiers[0].total, Some(100.0));
+        assert_eq!(tiers[0].utilization, 90.0);
         assert!(tiers[0].resets_at.is_some());
-        assert_eq!(tiers[1].name, "five_hour");
-        assert_eq!(tiers[1].utilization, 90.0);
+        assert_eq!(tiers[1].name, "weekly");
+        assert_eq!(tiers[1].utilization, 75.0);
         // 无 limits/usage → bad_response
         let v: Value = serde_json::from_str("{}").unwrap();
         assert_eq!(parse_kimi_plan(&v).unwrap_err().code, QuotaErrorCode::BadResponse);
