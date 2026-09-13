@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, defineComponent, h, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 import {
   api,
   toConfigError,
@@ -14,6 +14,8 @@ import {
 } from "../api";
 import { t } from "../i18n";
 import { showToast } from "../toast";
+import HintTip from "../components/HintTip.vue";
+import RefreshIcon from "../components/RefreshIcon.vue";
 
 // ===== 配置列表（读取 ~/.dsh 下的 settings.yaml / .credentials.yaml） =====
 const loadingList = ref(true);
@@ -243,44 +245,6 @@ function errText(code: QuotaErrorCode | null): string {
       return t("quota.err.unknown");
   }
 }
-
-/** 环形箭头图标;spin=true 时为旋转 loading */
-const RefreshIcon = defineComponent({
-  props: { spin: { type: Boolean, default: false } },
-  setup(props) {
-    return () =>
-      h(
-        "svg",
-        {
-          viewBox: "0 0 24 24",
-          fill: "none",
-          stroke: "currentColor",
-          "stroke-width": 2,
-          "stroke-linecap": "round",
-          "stroke-linejoin": "round",
-          class: props.spin ? "spin" : "",
-        },
-        props.spin
-          ? [
-              h("line", { x1: 12, y1: 2, x2: 12, y2: 6 }),
-              h("line", { x1: 12, y1: 18, x2: 12, y2: 22 }),
-              h("line", { x1: 4.93, y1: 4.93, x2: 7.76, y2: 7.76 }),
-              h("line", { x1: 16.24, y1: 16.24, x2: 19.07, y2: 19.07 }),
-              h("line", { x1: 2, y1: 12, x2: 6, y2: 12 }),
-              h("line", { x1: 18, y1: 12, x2: 22, y2: 12 }),
-              h("line", { x1: 4.93, y1: 19.07, x2: 7.76, y2: 16.24 }),
-              h("line", { x1: 16.24, y1: 7.76, x2: 19.07, y2: 4.93 }),
-            ]
-          : [
-              h("polyline", { points: "23 4 23 10 17 10" }),
-              h("polyline", { points: "1 20 1 14 7 14" }),
-              h("path", {
-                d: "M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15",
-              }),
-            ],
-      );
-  },
-});
 </script>
 
 <template>
@@ -289,6 +253,7 @@ const RefreshIcon = defineComponent({
     <div class="card s12">
       <h3 class="card-title">
         {{ t("quota.source.title") }}
+        <HintTip :text="t('quota.privacyNote')" />
         <button
           class="icon-btn r"
           :title="anyLoading ? t('quota.refreshing') : t('quota.refreshAll')"
@@ -300,7 +265,6 @@ const RefreshIcon = defineComponent({
         </button>
       </h3>
       <p class="note" style="margin: 8px 0 0">{{ sourceText }}</p>
-      <p class="note">{{ t("quota.privacyNote") }}</p>
       <p v-if="configErr" class="err">
         {{ configErrText }}
         <span v-if="configErr?.message" class="err-detail">{{ configErr.message }}</span>
@@ -517,14 +481,6 @@ const RefreshIcon = defineComponent({
 .icon-btn svg {
   width: 13px;
   height: 13px;
-}
-.spin {
-  animation: qspin 0.8s linear infinite;
-}
-@keyframes qspin {
-  to {
-    transform: rotate(360deg);
-  }
 }
 
 .card.off {

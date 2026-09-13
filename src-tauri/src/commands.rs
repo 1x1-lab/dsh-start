@@ -6,6 +6,7 @@ use crate::dshconf;
 use crate::manager;
 use crate::quota;
 use crate::runtime;
+use crate::stats;
 use crate::settings::{self, Settings};
 use crate::state::{AppState, DshStatus};
 
@@ -70,6 +71,45 @@ pub struct UpdateCheck {
     pub installed: Option<String>,
     pub latest: String,
     pub update_available: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DshTag {
+    pub tag: String,
+    pub version: String,
+}
+
+/// 查询 npm(含设置里配置的镜像源)上 DSH 包的全部 dist-tag,供版本选择下拉使用。
+#[tauri::command]
+pub async fn list_dsh_tags(app: AppHandle) -> Result<Vec<DshTag>, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        runtime::dist_tags(&app).map(|v| {
+            v.into_iter()
+                .map(|(tag, version)| DshTag { tag, version })
+                .collect()
+        })
+    })
+    .await
+    .map_err(|e| format!("查询 dist-tags 任务异常: {e}"))?
+}
+
+/// 查询 [startMs, endMs] 范围内全部会话的 token 用量结算点(毫秒时间戳,升序)。
+#[tauri::command]
+pub async fn get_token_usage_series(
+    start_ms: i64,
+    end_ms: i64,
+) -> Result<Vec<stats::UsagePoint>, String> {
+    if end_ms < start_ms {
+        return Err("时间范围无效".into());
+    }
+    tauri::async_runtime::spawn_blocking(
+        move || -> Result<Vec<stats::UsagePoint>, String> {
+            Ok(stats::token_usage_series(&crate::dshconf::dsh_home(), start_ms, end_ms))
+        },
+    )
+    .await
+    .map_err(|e| format!("查询用量序列任务异常: {e}"))?
 }
 
 /// Query the npm registry for the version the configured spec would install,
@@ -338,7 +378,7 @@ pub fn dismiss_wizard(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
-pub fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
+pub fn save_settings(app: AppHandle, mut settings: Settings) -> Result<(), String> {
     if settings.port == 0 {
         return Err("端口无效（1-65535）".into());
     }
@@ -347,6 +387,12 @@ pub fn save_settings(app: AppHandle, settings: Settings) -> Result<(), String> {
             return Err("控制端口不能与 DSH 端口相同".into());
         }
     }
+    let registry = settings.npm_registry.trim().to_string();
+    if !registry.is_empty() && !(registry.starts_with("http://") || registry.starts_with("https://"))
+    {
+        return Err("镜像源地址无效（需以 http(s):// 开头，留空使用官方源）".into());
+    }
+    settings.npm_registry = registry;
     let control_changed = {
         let state = app.state::<AppState>();
         let mut s = state.settings.lock().unwrap();

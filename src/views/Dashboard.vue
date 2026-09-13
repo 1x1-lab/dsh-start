@@ -7,6 +7,7 @@ import { t } from "../i18n";
 import { showToast } from "../toast";
 import CallbackCard from "../components/CallbackCard.vue";
 import StatusCard from "../components/StatusCard.vue";
+import TokenStatsCard from "../components/TokenStatsCard.vue";
 
 const busy = ref<string | null>(null);
 const message = ref("");
@@ -181,6 +182,7 @@ async function onForceStop() {
         @update-click="doUpdate"
       />
       <CallbackCard class="s12" />
+      <TokenStatsCard class="s12" />
     </div>
   </div>
 </template>

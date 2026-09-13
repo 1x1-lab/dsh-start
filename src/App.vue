@@ -5,6 +5,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { api } from "./api";
 import logoUrl from "./assets/deepseek.svg";
+import HintTip from "./components/HintTip.vue";
 import { bindEvents, setStatus, store } from "./events";
 import { setLocale, t } from "./i18n";
 import { statusText } from "./labels";
@@ -163,8 +164,7 @@ onMounted(async () => {
       <div class="layer2">
         <div class="page-head">
           <div>
-            <h1>{{ head.t }}</h1>
-            <div class="sub">{{ head.s }}</div>
+            <h1>{{ head.t }}<HintTip :text="head.s" /></h1>
           </div>
           <div class="right">
             <span class="status-pill" :class="pill.cls">

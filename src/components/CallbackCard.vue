@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import { api, type CallbackInfo } from "../api";
 import { store } from "../events";
 import { t } from "../i18n";
+import HintTip from "./HintTip.vue";
 
 const info = ref<CallbackInfo | null>(null);
 const copied = ref("");
@@ -34,7 +35,11 @@ async function copy(text: string, key: string) {
 
 <template>
   <div class="card callback">
-    <h3 class="card-title">{{ t("cb.title") }}<span class="r">{{ t("cb.throttle") }}</span></h3>
+    <h3 class="card-title">
+      {{ t("cb.title") }}
+      <HintTip :text="t('cb.note')" />
+      <span class="r">{{ t("cb.throttle") }}</span>
+    </h3>
     <template v-if="info">
       <div v-if="httpUrl" class="cmd">
         <span class="k">HTTP</span>
@@ -53,9 +58,6 @@ async function copy(text: string, key: string) {
         <span class="cp" @click="copy(info.cliCmd, 'cli')">
           {{ copied === "cli" ? t("cb.copied") : t("cb.copy") }}
         </span>
-      </div>
-      <div class="line">
-        <span class="note">{{ t("cb.note") }}</span>
       </div>
     </template>
     <div v-else class="muted">{{ t("cb.noInfo") }}</div>

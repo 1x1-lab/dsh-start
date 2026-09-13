@@ -15,6 +15,8 @@ pub struct Settings {
     pub control_port: Option<u16>,
     /// dsh version to install / keep (`latest` or a semver).
     pub dsh_version: String,
+    /// 自定义 npm 镜像源（如 https://registry.npmmirror.com）；留空 = 官方源。
+    pub npm_registry: String,
     /// auto-restart dsh after an unexpected exit while the app runs.
     pub crash_restart: bool,
     /// stop dsh when the launcher app quits.
@@ -36,6 +38,7 @@ impl Default for Settings {
             port: DEFAULT_DSH_PORT,
             control_port: None,
             dsh_version: DEFAULT_DSH_VERSION.to_string(),
+            npm_registry: String::new(),
             crash_restart: true,
             quit_stops_dsh: true,
             register_cli: true,

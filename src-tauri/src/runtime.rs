@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
@@ -328,6 +329,8 @@ pub fn system_dsh_dir() -> Option<(PathBuf, PathBuf)> {
 pub fn upgrade_system_dsh(app: &AppHandle, version: &str) -> Result<String, String> {
     let node_info = detect_node()?;
     let spec = format!("{}@{}", DSH_PACKAGE, version);
+    let registry = app.state::<AppState>().settings.lock().unwrap().npm_registry.clone();
+    let reg = registry_flags(&registry);
     let mut forward = forward_install_lines(app);
 
     if let Some(dsh) = find_on_path("dsh") {
@@ -337,29 +340,25 @@ pub fn upgrade_system_dsh(app: &AppHandle, version: &str) -> Result<String, Stri
             "info",
             &format!("升级系统 DSH（全局安装）到 {version}…"),
         );
-        let args = [
-            "install",
-            "-g",
-            &spec,
-            "--no-audit",
-            "--no-fund",
-            "--color=false",
-        ];
+        let mut args: Vec<&str> = vec!["install", "-g"];
+        args.extend(reg.iter().map(String::as_str));
+        args.push(&spec);
+        args.extend(["--no-audit", "--no-fund", "--color=false"]);
         let status = if let Some(cli) = &node_info.npm_cli {
             let mut cmd = Command::new(&node_info.node);
-            cmd.arg(cli).args(args);
+            cmd.arg(cli).args(&args);
             run_cmd_streaming(&mut cmd, &mut forward)?
         } else if cfg!(windows) {
             let npm = find_on_path("npm").ok_or("未检测到 npm")?;
             let mut cmd = Command::new("cmd");
             cmd.arg("/C")
                 .arg(format!("\"{}\"", npm.display()))
-                .args(args);
+                .args(&args);
             run_cmd_streaming(&mut cmd, &mut forward)?
         } else {
             let npm = find_on_path("npm").ok_or("未检测到 npm")?;
             let mut cmd = Command::new(npm);
-            cmd.args(args);
+            cmd.args(&args);
             run_cmd_streaming(&mut cmd, &mut forward)?
         };
         if !status.success() {
@@ -380,7 +379,10 @@ pub fn upgrade_system_dsh(app: &AppHandle, version: &str) -> Result<String, Stri
         "info",
         &format!("升级系统 DSH（npx 缓存）到 {version}…"),
     );
-    let args = ["--yes", &spec, "--version"];
+    let mut args: Vec<&str> = vec!["--yes"];
+    args.extend(reg.iter().map(String::as_str));
+    args.push(&spec);
+    args.push("--version");
     // 优先 node + npx-cli.js 直跑，绕开 .cmd shim 与 cmd.exe 的引号转义坑
     // （手动加的引号会被 Rust 再转义成 \" ，cmd 解析后命令行直接损坏）。
     let status = if let Some(cli) = resolve_npx_cli(&node_info.node) {
@@ -535,7 +537,9 @@ pub fn install(app: &AppHandle, version: &str, on_line: &mut dyn FnMut(&str)) ->
     let dir = runtime_dir(app);
     ensure_package_json(&dir)?;
     let spec = format!("{}@{}", DSH_PACKAGE, version);
-    let args = [
+    let registry = app.state::<AppState>().settings.lock().unwrap().npm_registry.clone();
+    let reg = registry_flags(&registry);
+    let mut args: Vec<&str> = vec![
         "install",
         "--prefix",
         dir.to_str().unwrap_or("."),
@@ -544,8 +548,9 @@ pub fn install(app: &AppHandle, version: &str, on_line: &mut dyn FnMut(&str)) ->
         "--loglevel",
         "info",
         "--color=false",
-        &spec,
     ];
+    args.extend(reg.iter().map(String::as_str));
+    args.push(&spec);
     let status = run_npm(&node_info.node, node_info.npm_cli.as_deref(), &args, &dir, on_line)?;
     if !status.success() {
         return Err(format!("npm install 失败（exit={:?}）", status.code()));
@@ -564,10 +569,13 @@ pub fn latest_version(app: &AppHandle) -> Result<String, String> {
         .unwrap()
         .dsh_version
         .clone();
+    let registry = app.state::<AppState>().settings.lock().unwrap().npm_registry.clone();
+    let reg = registry_flags(&registry);
     let dir = runtime_dir(app);
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let spec = format!("{}@{}", DSH_PACKAGE, spec_setting);
-    let args = ["view", &spec, "version", "--loglevel", "error", "--color=false"];
+    let mut args: Vec<&str> = vec!["view", &spec, "version", "--loglevel", "error", "--color=false"];
+    args.extend(reg.iter().map(String::as_str));
     let mut last = String::new();
     let status = run_npm(
         &node_info.node,
@@ -591,6 +599,67 @@ pub fn latest_version(app: &AppHandle) -> Result<String, String> {
     Ok(last)
 }
 
+/// 查询 npm 上 DSH 包的全部 dist-tag（tag → 版本），走设置里配置的镜像源。
+/// latest / next / alpha 优先，其余按字母序。
+pub fn dist_tags(app: &AppHandle) -> Result<Vec<(String, String)>, String> {
+    let node_info = detect_node()?;
+    let registry = app.state::<AppState>().settings.lock().unwrap().npm_registry.clone();
+    let reg = registry_flags(&registry);
+    let dir = runtime_dir(app);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let mut args: Vec<&str> = vec![
+        "view",
+        DSH_PACKAGE,
+        "dist-tags",
+        "--json",
+        "--loglevel",
+        "error",
+        "--color=false",
+    ];
+    args.extend(reg.iter().map(String::as_str));
+    // dist-tags 输出是多行 JSON，必须累积全部输出（latest_version 只留最后一行，不适用）
+    let mut out = String::new();
+    let status = run_npm(
+        &node_info.node,
+        node_info.npm_cli.as_deref(),
+        &args,
+        &dir,
+        &mut |line| {
+            out.push_str(&strip_ansi(line));
+            out.push('\n');
+        },
+    )?;
+    if !status.success() {
+        return Err(format!("npm view dist-tags 失败（exit={:?}）", status.code()));
+    }
+    parse_dist_tags(&out)
+}
+
+/// 解析 `npm view <pkg> dist-tags --json` 输出；latest / next / alpha 优先，其余按字母序
+fn parse_dist_tags(raw: &str) -> Result<Vec<(String, String)>, String> {
+    let map: HashMap<String, String> = serde_json::from_str(raw.trim())
+        .map_err(|e| format!("dist-tags 解析失败: {e}"))?;
+    let rank = |t: &str| match t {
+        "latest" => 0,
+        "next" => 1,
+        "alpha" => 2,
+        _ => 3,
+    };
+    let mut v: Vec<(String, String)> = map.into_iter().collect();
+    v.sort_by(|a, b| rank(&a.0).cmp(&rank(&b.0)).then_with(|| a.0.cmp(&b.0)));
+    Ok(v)
+}
+
+/// 自定义镜像源的 npm flag；未配置或非法（非 http/https）时返回空，视为使用默认源。
+/// scoped 包需要同时覆盖 `@scope:registry`，否则用户 .npmrc 里的 scope 配置会优先生效。
+fn registry_flags(registry: &str) -> Vec<String> {
+    let r = registry.trim();
+    if r.is_empty() || !(r.starts_with("http://") || r.starts_with("https://")) {
+        return Vec::new();
+    }
+    vec![format!("--registry={r}"), format!("--@deepseek-ai:registry={r}")]
+}
+
 /// Convenience used by long-running commands: log + forward npm lines.
 pub fn forward_install_lines(app: &AppHandle) -> impl FnMut(&str) + '_ {
     move |line: &str| {
@@ -610,6 +679,54 @@ pub fn cache_node_info(app: &AppHandle) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn registry_flags_empty_or_invalid() {
+        assert!(registry_flags("").is_empty());
+        assert!(registry_flags("   ").is_empty());
+        // 非法地址不产生 flag,视为默认源(保存入口另有校验)
+        assert!(registry_flags("registry.npmmirror.com").is_empty());
+        assert!(registry_flags("ftp://x").is_empty());
+    }
+
+    #[test]
+    fn registry_flags_covers_default_and_scope() {
+        let flags = registry_flags(" https://registry.npmmirror.com ");
+        assert_eq!(
+            flags,
+            vec![
+                "--registry=https://registry.npmmirror.com".to_string(),
+                "--@deepseek-ai:registry=https://registry.npmmirror.com".to_string(),
+            ]
+        );
+        assert!(registry_flags("http://localhost:4873").len() == 2);
+    }
+
+    #[test]
+    fn parse_dist_tags_ranks_and_sorts() {
+        let raw = r#"{
+          "alpha": "0.1.5-alpha.2",
+          "next": "0.1.5-rc.2",
+          "latest": "0.1.5-rc.1"
+        }"#;
+        let tags = parse_dist_tags(raw).unwrap();
+        assert_eq!(
+            tags,
+            vec![
+                ("latest".to_string(), "0.1.5-rc.1".to_string()),
+                ("next".to_string(), "0.1.5-rc.2".to_string()),
+                ("alpha".to_string(), "0.1.5-alpha.2".to_string()),
+            ]
+        );
+    }
+
+    #[test]
+    fn parse_dist_tags_invalid_is_error() {
+        assert!(parse_dist_tags("npm error 404").is_err());
+        assert!(parse_dist_tags("").is_err());
+        let tags = parse_dist_tags("{}").unwrap();
+        assert!(tags.is_empty());
+    }
 
     /// macOS GUI 进程（Finder/Dock 启动）只继承精简 PATH。只要电脑上装有 node
     /// （官方 pkg / brew / nvm / fnm / volta 任一），精简 PATH 下也必须能找到。

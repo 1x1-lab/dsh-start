@@ -54,6 +54,21 @@ const zh = {
   "dash.confirmStop": "确认强制停止？",
   "dash.forceStopDone": "已发送强制停止，端口释放后状态自动更新",
 
+  // ===== Token 统计卡 =====
+  "dash.token.title": "Token 统计",
+  "dash.token.hint":
+    "本机 DSH 会话的 token 用量曲线（未缓存输入 / 输出 / 缓存读 / 缓存写；查询跨度不超过 24 小时按本地自然小时汇总，超过 24 小时按本地自然日汇总；纵轴为对数刻度），来自会话日志的用量结算点，每 30 秒自动刷新；悬停查看时段与所选边界，滚轮不缩放图表",
+  "dash.token.input": "输入（未缓存）",
+  "dash.token.output": "输出",
+  "dash.token.cacheRead": "缓存读",
+  "dash.token.loading": "正在统计…",
+  "dash.token.noDataInRange": "所选时间范围内没有用量数据",
+  "dash.token.r12h": "12 小时",
+  "dash.token.r24h": "24 小时",
+  "dash.token.r7d": "7 天",
+  "dash.token.rcustom": "自定义",
+  "dash.token.refreshedAt": "刷新于 {time}",
+
   // ===== 状态卡 =====
   "card.port": "DSH 端口",
   "card.controlPort": "控制端口",
@@ -88,7 +103,12 @@ const zh = {
   "set.controlPort": "控制端口",
   "set.controlPort.sub": "HTTP 回调端点；留空 = DSH 端口 + 1，被占用时自动后移，保存后立即生效",
   "set.dshVersion": "DSH 版本",
-  "set.dshVersion.sub": "latest 或指定版本号，如 0.1.0-rc.6",
+  "set.dshVersion.sub": "按所选 tag 拉取；「自定义版本」可填固定版本号，如 0.1.0-rc.6",
+  "set.dshVersionCustom": "自定义版本…",
+  "set.registry": "npm 镜像源",
+  "set.registry.sub":
+    "安装 / 升级 / 检查更新走此源；留空 = 官方源，可填 https://registry.npmmirror.com 加速（保存后生效）",
+  "set.err.registryInvalid": "镜像源地址无效（需以 http(s):// 开头，留空使用官方源）",
   "set.save": "保存设置",
   "set.saved": "✓ 已保存",
   "set.behavior": "行为",
@@ -248,6 +268,21 @@ const en: Record<MsgKey, string> = {
   "dash.confirmStop": "Confirm force stop?",
   "dash.forceStopDone": "Force stop sent; status updates when the port frees",
 
+  // ===== Token stats card =====
+  "dash.token.title": "Token Stats",
+  "dash.token.hint":
+    "Token usage for local DSH sessions (uncached input / output / cache read / cache write), summed by local hour for ranges up to 24h and by local day for longer ranges, on a log-scale Y axis. Refreshed every 30s; hover a point for its period and selected boundary. The mouse wheel does not zoom the chart.",
+  "dash.token.input": "Input (uncached)",
+  "dash.token.output": "Output",
+  "dash.token.cacheRead": "Cache read",
+  "dash.token.loading": "Counting…",
+  "dash.token.noDataInRange": "No usage data in the selected range",
+  "dash.token.r12h": "12h",
+  "dash.token.r24h": "24h",
+  "dash.token.r7d": "7d",
+  "dash.token.rcustom": "Custom",
+  "dash.token.refreshedAt": "Refreshed {time}",
+
   "card.port": "DSH Port",
   "card.controlPort": "Control Port",
   "card.version": "Version",
@@ -280,7 +315,12 @@ const en: Record<MsgKey, string> = {
   "set.controlPort.sub":
     "HTTP callback endpoint; empty = DSH port + 1, shifts automatically when occupied, applies immediately on save",
   "set.dshVersion": "DSH Version",
-  "set.dshVersion.sub": "latest or a pinned version like 0.1.0-rc.6",
+  "set.dshVersion.sub": "Pull by the selected tag; \"Custom version\" accepts a pinned one like 0.1.0-rc.6",
+  "set.dshVersionCustom": "Custom version…",
+  "set.registry": "npm Registry",
+  "set.registry.sub":
+    "Used for install / upgrade / update checks; empty = official registry, e.g. https://registry.npmmirror.com for faster mirrors (applies after save)",
+  "set.err.registryInvalid": "Invalid registry URL (must start with http(s)://; empty = official)",
   "set.save": "Save Settings",
   "set.saved": "✓ Saved",
   "set.behavior": "Behavior",

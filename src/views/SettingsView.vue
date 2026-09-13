@@ -2,7 +2,7 @@
 import { onMounted, reactive, ref } from "vue";
 import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import { api, type Settings } from "../api";
+import { api, type DshTag, type Settings } from "../api";
 import { store } from "../events";
 import { LOCALES, setLocale, t } from "../i18n";
 import { showToast } from "../toast";
@@ -14,11 +14,13 @@ import {
   updateAvailable,
 } from "../update";
 import ToggleRow from "../components/ToggleRow.vue";
+import HintTip from "../components/HintTip.vue";
 
 const form = reactive<Settings>({
   port: 3080,
   controlPort: null,
   dshVersion: "latest",
+  npmRegistry: "",
   crashRestart: true,
   quitStopsDsh: true,
   registerCli: true,
@@ -32,12 +34,34 @@ const runtimeDir = ref("");
 const systemDshVersion = ref<string | null>(null);
 const systemDshLocation = ref<string | null>(null);
 
+/** npm dist-tags(latest/next/alpha…);拉取失败时为 null,退化为手输版本 */
+const tags = ref<DshTag[] | null>(null);
+/** 版本选择:值为某个 tag,或 "__custom__"(手输固定版本号) */
+const versionSel = ref("");
+
+async function loadTags() {
+  try {
+    tags.value = await api.listDshTags();
+    // 当前配置命中某个 tag 则选中,否则落入自定义输入
+    versionSel.value = tags.value.some((t) => t.tag === form.dshVersion)
+      ? form.dshVersion
+      : "__custom__";
+  } catch {
+    tags.value = null;
+  }
+}
+
+function onVersionSel() {
+  if (versionSel.value !== "__custom__") form.dshVersion = versionSel.value;
+}
+
 onMounted(async () => {
   try {
     Object.assign(form, await api.getSettings());
   } catch {
     /* ignore */
   }
+  void loadTags();
   try {
     appVersion.value = await getVersion();
   } catch {
@@ -78,11 +102,18 @@ async function save() {
       return;
     }
   }
+  const registry = form.npmRegistry.trim();
+  if (registry && !(registry.startsWith("http://") || registry.startsWith("https://"))) {
+    message.value = t("set.err.registryInvalid");
+    return;
+  }
+  form.npmRegistry = registry;
   try {
     await api.saveSettings({ ...form, controlPort });
     form.controlPort = controlPort;
     setLocale(form.language); // 语言随保存生效
     showToast(t("set.saved"));
+    void loadTags(); // 镜像源可能变了,tag 下拉按新源刷新
   } catch (e) {
     message.value = String(e);
   }
@@ -106,7 +137,7 @@ async function toggleAutostart(v: boolean) {
       <div class="line">
         <div>
           {{ t("set.language") }}
-          <span class="sub">{{ t("set.language.sub") }}</span>
+          <HintTip :text="t('set.language.sub')" />
         </div>
         <span class="field">
           <select v-model="form.language">
@@ -117,7 +148,7 @@ async function toggleAutostart(v: boolean) {
       <div class="line">
         <div>
           {{ t("set.port") }}
-          <span class="sub">{{ t("set.port.sub") }}</span>
+          <HintTip :text="t('set.port.sub')" />
         </div>
         <span class="field">
           <input v-model.number="form.port" type="number" min="1" max="65535" />
@@ -126,7 +157,7 @@ async function toggleAutostart(v: boolean) {
       <div class="line">
         <div>
           {{ t("set.controlPort") }}
-          <span class="sub">{{ t("set.controlPort.sub") }}</span>
+          <HintTip :text="t('set.controlPort.sub')" />
         </div>
         <span class="field">
           <input
@@ -141,13 +172,39 @@ async function toggleAutostart(v: boolean) {
       <div class="line">
         <div>
           {{ t("set.dshVersion") }}
-          <span class="sub">{{ t("set.dshVersion.sub") }}</span>
+          <HintTip :text="t('set.dshVersion.sub')" />
         </div>
-        <span class="field">
-          <input v-model="form.dshVersion" type="text" placeholder="latest" />
+        <span class="field version-field">
+          <select v-if="tags" v-model="versionSel" @change="onVersionSel">
+            <option v-for="tg in tags" :key="tg.tag" :value="tg.tag">
+              {{ tg.tag }}（{{ tg.version }}）
+            </option>
+            <option value="__custom__">{{ t("set.dshVersionCustom") }}</option>
+          </select>
+          <input
+            v-if="!tags || versionSel === '__custom__'"
+            v-model="form.dshVersion"
+            type="text"
+            placeholder="latest / 0.1.5-rc.2"
+          />
+        </span>
+      </div>
+      <div class="line">
+        <div>
+          {{ t("set.registry") }}
+          <HintTip :text="t('set.registry.sub')" />
+        </div>
+        <span class="field registry-field">
+          <input
+            v-model="form.npmRegistry"
+            type="text"
+            placeholder="https://registry.npmmirror.com"
+            spellcheck="false"
+          />
         </span>
       </div>
       <div class="btn-row">
+        <span class="btn-hint"><HintTip :text="t('set.saveNote')" /></span>
         <button class="btn primary save-btn" @click="save">{{ t("set.save") }}</button>
       </div>
       <p v-if="message" class="msg">{{ message }}</p>
@@ -165,7 +222,6 @@ async function toggleAutostart(v: boolean) {
         :label="t('set.registerCli')"
         :desc="t('set.registerCli.desc')"
       />
-      <p class="note" style="margin: 10px 0 0">{{ t("set.saveNote") }}</p>
     </div>
 
     <div class="card s12">
@@ -252,6 +308,14 @@ async function toggleAutostart(v: boolean) {
 .field input,
 .field select {
   width: 120px;
+}
+/* tag 下拉(含版本号)与镜像源地址比常规字段宽 */
+.version-field select,
+.version-field input {
+  width: 150px;
+}
+.registry-field input {
+  width: 230px;
 }
 .field input[type="text"],
 .field select {

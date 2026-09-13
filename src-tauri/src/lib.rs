@@ -7,6 +7,7 @@ mod manager;
 mod quota;
 mod runtime;
 mod settings;
+mod stats;
 mod state;
 mod tray;
 
@@ -44,6 +45,8 @@ pub fn run() {
             commands::install_node_guided,
             commands::update_dsh,
             commands::check_update,
+            commands::list_dsh_tags,
+            commands::get_token_usage_series,
             commands::get_settings,
             commands::save_settings,
             commands::dismiss_wizard,

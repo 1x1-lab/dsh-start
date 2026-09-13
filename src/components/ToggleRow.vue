@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import HintTip from "./HintTip.vue";
+
 defineProps<{
   label: string;
   desc?: string;
@@ -12,8 +14,10 @@ defineEmits<{
 <template>
   <div class="toggle-row">
     <div>
-      <div class="label">{{ label }}</div>
-      <div v-if="desc" class="desc">{{ desc }}</div>
+      <div class="label">
+        {{ label }}
+        <HintTip v-if="desc" :text="desc" />
+      </div>
     </div>
     <button
       class="switch"
@@ -41,11 +45,6 @@ defineEmits<{
 .label {
   font-weight: 550;
   font-size: 13px;
-}
-.desc {
-  font-size: 11px;
-  color: var(--text-faint);
-  margin-top: 1px;
 }
 .switch {
   flex: none;

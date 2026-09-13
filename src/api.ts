@@ -36,11 +36,28 @@ export interface UpdateCheck {
   updateAvailable: boolean;
 }
 
+/** npm 上 DSH 包的一个 dist-tag(tag → 版本) */
+export interface DshTag {
+  tag: string;
+  version: string;
+}
+
+/** 一个 token 用量结算点(assistant/chunk usage 事件,毫秒时间戳) */
+export interface UsagePoint {
+  ts: number;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+}
+
 export interface Settings {
   port: number;
   /** 回调控制端口；null = 自动（DSH 端口 + 1） */
   controlPort: number | null;
   dshVersion: string;
+  /** 自定义 npm 镜像源（如 https://registry.npmmirror.com）；空 = 官方源 */
+  npmRegistry: string;
   crashRestart: boolean;
   quitStopsDsh: boolean;
   registerCli: boolean;
@@ -188,6 +205,9 @@ export const api = {
   upgradeSystemDsh: (version?: string) =>
     invoke<string>("upgrade_system_dsh", { version }),
   checkUpdate: () => invoke<UpdateCheck>("check_update"),
+  listDshTags: () => invoke<DshTag[]>("list_dsh_tags"),
+  getTokenStats: (startMs: number, endMs: number) =>
+    invoke<UsagePoint[]>("get_token_usage_series", { startMs, endMs }),
   getSettings: () => invoke<Settings>("get_settings"),
   saveSettings: (settings: Settings) =>
     invoke<void>("save_settings", { settings }),
