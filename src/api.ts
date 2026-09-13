@@ -48,6 +48,8 @@ export interface Settings {
   language: string;
   /** 首次向导已跳过/完成（持久化） */
   wizardDismissed: boolean;
+  /** 额度页关闭查询的 API 路由键列表（关闭后不自动查询，全部刷新也跳过） */
+  quotaDisabled: string[];
 }
 
 export interface LogLine {
@@ -97,10 +99,22 @@ export interface DeepSeekBalanceInfo {
   topped_up_balance: string;
 }
 
+/** 套餐单窗口用量;name 为机器键(five_hour/weekly/monthly),显示文案由前端映射 */
+export interface QuotaTier {
+  name: string;
+  /** 已用百分比(0-100) */
+  utilization: number;
+  resets_at: string | null;
+  used: number | null;
+  total: number | null;
+  unit: string | null;
+}
+
 /** 查询结果:按供应商类型分别承载不同的信息 */
 export type QuotaResult =
   | { kind: "deep_seek"; is_available: boolean; balance_infos: DeepSeekBalanceInfo[] }
   | { kind: "open_router"; total_credits: number; total_usage: number; remaining: number }
+  | { kind: "plan"; name: string | null; tiers: QuotaTier[] }
   | { kind: "simple"; balance: number; unit: string | null };
 
 export type QuotaErrorCode =

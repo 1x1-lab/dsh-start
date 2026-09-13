@@ -24,6 +24,7 @@ const form = reactive<Settings>({
   registerCli: true,
   language: "zh",
   wizardDismissed: false,
+  quotaDisabled: [],
 });
 const message = ref("");
 const appVersion = ref("");
@@ -147,7 +148,7 @@ async function toggleAutostart(v: boolean) {
         </span>
       </div>
       <div class="btn-row">
-        <button class="btn primary" @click="save">{{ t("set.save") }}</button>
+        <button class="btn primary save-btn" @click="save">{{ t("set.save") }}</button>
       </div>
       <p v-if="message" class="msg">{{ message }}</p>
     </div>
@@ -252,9 +253,6 @@ async function toggleAutostart(v: boolean) {
 .field select {
   width: 120px;
 }
-.field input[type="number"] {
-  text-align: right;
-}
 .field input[type="text"],
 .field select {
   text-align: left;
@@ -278,6 +276,9 @@ async function toggleAutostart(v: boolean) {
 }
 .btn-row.center {
   justify-content: center;
+}
+.save-btn {
+  min-width: 120px;
 }
 .msg {
   color: var(--red);

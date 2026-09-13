@@ -26,6 +26,8 @@ pub struct Settings {
     pub language: String,
     /// 首次使用向导已被用户跳过/完成（持久化，避免每次启动都弹）。
     pub wizard_dismissed: bool,
+    /// 额度页关闭查询的 API 路由键列表（关闭后不自动查询，全部刷新也跳过）。
+    pub quota_disabled: Vec<String>,
 }
 
 impl Default for Settings {
@@ -39,6 +41,7 @@ impl Default for Settings {
             register_cli: true,
             language: "zh".to_string(),
             wizard_dismissed: false,
+            quota_disabled: Vec::new(),
         }
     }
 }

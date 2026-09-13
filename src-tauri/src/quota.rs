@@ -78,6 +78,18 @@ pub struct DeepSeekBalance {
     pub balance_infos: Vec<BalanceInfo>,
 }
 
+/// 套餐单窗口用量;`name` 为机器键(five_hour / weekly / monthly),显示文案由前端映射
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct QuotaTier {
+    pub name: String,
+    /// 已用百分比(0-100,不裁剪,交渲染层)
+    pub utilization: f64,
+    pub resets_at: Option<String>,
+    pub used: Option<f64>,
+    pub total: Option<f64>,
+    pub unit: Option<String>,
+}
+
 /// 查询结果：按供应商类型分别承载不同的信息
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
@@ -93,6 +105,12 @@ pub enum QuotaResult {
         total_usage: f64,
         remaining: f64,
     },
+    /// 订阅套餐（Coding Plan）用量：Kimi For Coding / 智谱 / MiniMax
+    Plan {
+        /// 套餐名（如智谱 level）；接口不提供时为 None
+        name: Option<String>,
+        tiers: Vec<QuotaTier>,
+    },
     /// 其他单一余额端点（StepFun / SiliconFlow / Novita / OpenAI 协议通用查询）
     Simple { balance: f64, unit: Option<String> },
 }
@@ -105,8 +123,21 @@ enum Target {
     StepFun,
     SiliconFlow { cn: bool },
     Novita,
+    /// Kimi For Coding 订阅套餐用量（端点固定）
+    KimiPlan,
+    /// 智谱 coding plan 用量（鉴权不带 Bearer 前缀）
+    ZhipuPlan { url: String },
+    /// MiniMax coding plan 剩余
+    MiniMaxPlan { url: String },
     /// 通用查询：`{baseURL}/user/balance` → 顶层 `balance`
     Generic { url: String },
+}
+
+/// 取 URL 的 `scheme://host` 部分
+fn origin_of(url: &str) -> Option<String> {
+    let (scheme, rest) = url.split_once("://")?;
+    let host = rest.split(['/', '?', '#']).next()?;
+    (scheme.starts_with("http") && !host.is_empty()).then(|| format!("{scheme}://{host}"))
 }
 
 /// 按 baseURL 子串识别已知供应商（与线缆协议解耦）；
@@ -121,6 +152,24 @@ fn target_for(p: &ProviderSummary) -> Result<Target, QuotaError> {
     }
     if lower.contains("openrouter.ai") {
         return Ok(Target::OpenRouter);
+    }
+    // 订阅套餐类端点（推理协议多为 anthropic-messages,与余额无关）
+    if lower.contains("api.kimi.com") {
+        return Ok(Target::KimiPlan);
+    }
+    if lower.contains("api.z.ai") || lower.contains("bigmodel.cn") {
+        let base = origin_of(p.base_url.as_deref().unwrap_or("https://api.z.ai"))
+            .unwrap_or_else(|| "https://api.z.ai".into());
+        return Ok(Target::ZhipuPlan {
+            url: format!("{base}/api/monitor/usage/quota/limit"),
+        });
+    }
+    if lower.contains("api.minimax.io") || lower.contains("api.minimaxi.com") {
+        let base = origin_of(p.base_url.as_deref().unwrap_or("https://api.minimax.io"))
+            .unwrap_or_else(|| "https://api.minimax.io".into());
+        return Ok(Target::MiniMaxPlan {
+            url: format!("{base}/v1/api/openplatform/coding_plan/remains"),
+        });
     }
     if lower.contains("api.stepfun.ai") || lower.contains("api.stepfun.com") {
         return Ok(Target::StepFun);
@@ -179,17 +228,31 @@ fn status_error(status: u16) -> QuotaError {
     QuotaError::new(code, format!("HTTP {status}: {message}"))
 }
 
-/// GET + Bearer 请求并解析 JSON；非 2xx → 状态码映射（通用查询的 404 → 不支持）。
-async fn get_json(url: &str, key: &str, generic_404_unsupported: bool) -> Result<Value, QuotaError> {
+/// GET 请求并解析 JSON；`bearer=false` 时 Authorization 不带 Bearer 前缀（智谱约定）。
+/// 非 2xx → 状态码映射（通用查询的 404 → 不支持）。
+async fn get_json(
+    url: &str,
+    key: &str,
+    bearer: bool,
+    accept_language: Option<&str>,
+    generic_404_unsupported: bool,
+) -> Result<Value, QuotaError> {
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(REQUEST_TIMEOUT)
         .build()
         .map_err(|e| QuotaError::new(QuotaErrorCode::Network, format!("HTTP 客户端构建失败: {e}")))?;
-    let resp = client
-        .get(url)
-        .bearer_auth(key)
-        .header(reqwest::header::ACCEPT, "application/json")
+    let mut req = client.get(url);
+    req = if bearer {
+        req.bearer_auth(key)
+    } else {
+        req.header(reqwest::header::AUTHORIZATION, key)
+    };
+    req = req.header(reqwest::header::ACCEPT, "application/json");
+    if let Some(lang) = accept_language {
+        req = req.header(reqwest::header::ACCEPT_LANGUAGE, lang);
+    }
+    let resp = req
         .send()
         .await
         .map_err(|e| {
@@ -282,20 +345,198 @@ fn parse_generic(v: &Value) -> Result<QuotaResult, QuotaError> {
     Ok(QuotaResult::Simple { balance, unit: None })
 }
 
+/// 重置时间：字符串原样透传；数字自动区分秒（< 1e12）与毫秒，≤ 0 视为无
+fn extract_reset_time(v: Option<&Value>) -> Option<String> {
+    match v? {
+        Value::String(s) => {
+            let t = s.trim();
+            (!t.is_empty()).then(|| t.to_string())
+        }
+        Value::Number(n) => {
+            let ms = n.as_f64()?;
+            if ms <= 0.0 {
+                return None;
+            }
+            let ms = if ms < 1e12 { ms * 1000.0 } else { ms };
+            chrono::DateTime::from_timestamp_millis(ms as i64)
+                .map(|d| d.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        }
+        _ => None,
+    }
+}
+
+/// Kimi For Coding：顶层 `usage`（每周窗口）+ `limits[].detail`（5 小时窗口），
+/// 每项 `limit` / `remaining` / `resetTime`
+fn parse_kimi_plan(v: &Value) -> Result<QuotaResult, QuotaError> {
+    let mut tiers = Vec::new();
+    if let Some(u) = v.get("usage") {
+        if let Some(t) = kimi_tier("weekly", u) {
+            tiers.push(t);
+        }
+    }
+    if let Some(arr) = v.get("limits").and_then(Value::as_array) {
+        for item in arr {
+            let Some(d) = item.get("detail") else { continue };
+            if let Some(t) = kimi_tier("five_hour", d) {
+                tiers.push(t);
+            }
+        }
+    }
+    if tiers.is_empty() {
+        return Err(QuotaError::new(
+            QuotaErrorCode::BadResponse,
+            "响应缺少套餐用量数据",
+        ));
+    }
+    Ok(QuotaResult::Plan { name: None, tiers })
+}
+
+fn kimi_tier(name: &str, d: &Value) -> Option<QuotaTier> {
+    let total = parse_f64_field(d.get("limit"))?;
+    if total <= 0.0 {
+        return None;
+    }
+    let remaining = parse_f64_field(d.get("remaining")).unwrap_or(0.0);
+    let used = (total - remaining).max(0.0);
+    Some(QuotaTier {
+        name: name.into(),
+        utilization: used / total * 100.0,
+        resets_at: extract_reset_time(d.get("resetTime")),
+        used: Some(used),
+        total: Some(total),
+        unit: None,
+    })
+}
+
+/// 智谱（z.ai / bigmodel.cn）：`data.limits[]`，`type` 限 TOKENS_LIMIT / CREDIT_LIMIT，
+/// `unit` 3 → 5 小时、6 → 每周（实测值），`percentage` 直接为已用百分比，`data.level` 为套餐名。
+/// unit 缺失时兜底：无重置时间的条目优先归 5 小时，其余归每周（最多两条）。
+fn parse_zhipu_plan(v: &Value) -> Result<QuotaResult, QuotaError> {
+    let data = v
+        .get("data")
+        .ok_or_else(|| QuotaError::new(QuotaErrorCode::BadResponse, "响应缺少 data 字段"))?;
+    let name = data
+        .get("level")
+        .and_then(Value::as_str)
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty());
+    let arr = data.get("limits").and_then(Value::as_array).ok_or_else(|| {
+        QuotaError::new(QuotaErrorCode::BadResponse, "响应缺少 limits 字段")
+    })?;
+
+    let mut tiers: Vec<QuotaTier> = Vec::new();
+    let mut seen_unitless = 0usize;
+    for item in arr {
+        let ty = item.get("type").and_then(Value::as_str).unwrap_or("");
+        if !ty.eq_ignore_ascii_case("TOKENS_LIMIT") && !ty.eq_ignore_ascii_case("CREDIT_LIMIT") {
+            continue;
+        }
+        let tier_name = match item.get("unit").and_then(Value::as_i64) {
+            Some(3) => "five_hour",
+            Some(6) => "weekly",
+            _ => {
+                seen_unitless += 1;
+                let has_reset = item.get("nextResetTime").map(|x| !x.is_null()).unwrap_or(false);
+                if !has_reset && seen_unitless == 1 && !tiers.iter().any(|t| t.name == "five_hour") {
+                    "five_hour"
+                } else if !tiers.iter().any(|t| t.name == "weekly") {
+                    "weekly"
+                } else {
+                    continue;
+                }
+            }
+        };
+        tiers.push(QuotaTier {
+            name: tier_name.into(),
+            utilization: parse_f64_field(item.get("percentage")).unwrap_or(0.0),
+            resets_at: extract_reset_time(item.get("nextResetTime")),
+            used: None,
+            total: None,
+            unit: None,
+        });
+        if tiers.len() >= 2 {
+            break;
+        }
+    }
+    if tiers.is_empty() {
+        return Err(QuotaError::new(
+            QuotaErrorCode::BadResponse,
+            "响应缺少套餐用量数据",
+        ));
+    }
+    Ok(QuotaResult::Plan { name, tiers })
+}
+
+/// MiniMax：`model_remains[]` 只取 `model_name == "general"`；返回的是「剩余」百分比需反转；
+/// 周窗口仅当 `current_weekly_status == 1`（其余状态为无周限额，展示会误导）。
+fn parse_minimax_plan(v: &Value) -> Result<QuotaResult, QuotaError> {
+    let arr = v.get("model_remains").and_then(Value::as_array).ok_or_else(|| {
+        QuotaError::new(QuotaErrorCode::BadResponse, "响应缺少 model_remains 字段")
+    })?;
+    let mut tiers = Vec::new();
+    for item in arr {
+        if item.get("model_name").and_then(Value::as_str) != Some("general") {
+            continue;
+        }
+        if let Some(remain) = parse_f64_field(item.get("current_interval_remaining_percent")) {
+            tiers.push(QuotaTier {
+                name: "five_hour".into(),
+                utilization: (100.0 - remain).clamp(0.0, 100.0),
+                resets_at: extract_reset_time(item.get("end_time")),
+                used: None,
+                total: None,
+                unit: None,
+            });
+        }
+        if item.get("current_weekly_status").and_then(Value::as_i64) == Some(1) {
+            if let Some(remain) = parse_f64_field(item.get("current_weekly_remaining_percent")) {
+                tiers.push(QuotaTier {
+                    name: "weekly".into(),
+                    utilization: (100.0 - remain).clamp(0.0, 100.0),
+                    resets_at: extract_reset_time(item.get("end_time")),
+                    used: None,
+                    total: None,
+                    unit: None,
+                });
+            }
+        }
+        break;
+    }
+    if tiers.is_empty() {
+        return Err(QuotaError::new(
+            QuotaErrorCode::BadResponse,
+            "响应缺少套餐用量数据",
+        ));
+    }
+    Ok(QuotaResult::Plan { name: None, tiers })
+}
+
 /// 查询某个 API 的额度。异步执行（Tauri async runtime），不阻塞 UI 线程。
 pub async fn query_provider(p: &ProviderSummary, key: &str) -> Result<QuotaResult, QuotaError> {
     validate_key(key)?;
     match target_for(p)? {
         Target::DeepSeek { url } => {
-            let v = get_json(&url, key, false).await?;
+            let v = get_json(&url, key, true, None, false).await?;
             parse_deepseek(&v)
         }
         Target::OpenRouter => {
-            let v = get_json("https://openrouter.ai/api/v1/credits", key, false).await?;
+            let v = get_json("https://openrouter.ai/api/v1/credits", key, true, None, false).await?;
             Ok(parse_openrouter(&v))
         }
+        Target::KimiPlan => {
+            let v = get_json("https://api.kimi.com/coding/v1/usages", key, true, None, false).await?;
+            parse_kimi_plan(&v)
+        }
+        Target::ZhipuPlan { url } => {
+            let v = get_json(&url, key, false, Some("en-US,en"), false).await?;
+            parse_zhipu_plan(&v)
+        }
+        Target::MiniMaxPlan { url } => {
+            let v = get_json(&url, key, true, None, false).await?;
+            parse_minimax_plan(&v)
+        }
         Target::StepFun => {
-            let v = get_json("https://api.stepfun.com/v1/accounts", key, false).await?;
+            let v = get_json("https://api.stepfun.com/v1/accounts", key, true, None, false).await?;
             Ok(parse_stepfun(&v))
         }
         Target::SiliconFlow { cn } => {
@@ -304,15 +545,15 @@ pub async fn query_provider(p: &ProviderSummary, key: &str) -> Result<QuotaResul
             } else {
                 "https://api.siliconflow.com/v1/user/info"
             };
-            let v = get_json(url, key, false).await?;
+            let v = get_json(url, key, true, None, false).await?;
             parse_siliconflow(&v, cn)
         }
         Target::Novita => {
-            let v = get_json("https://api.novita.ai/v3/user/balance", key, false).await?;
+            let v = get_json("https://api.novita.ai/v3/user/balance", key, true, None, false).await?;
             Ok(parse_novita(&v))
         }
         Target::Generic { url } => {
-            let v = get_json(&url, key, true).await?;
+            let v = get_json(&url, key, true, None, true).await?;
             parse_generic(&v)
         }
     }
@@ -387,11 +628,195 @@ mod tests {
 
     #[test]
     fn target_unsupported_for_anthropic_and_unknown() {
-        let err = target_for(&provider(Some("https://api.kimi.com/coding"), Some("anthropic-messages")))
+        let err = target_for(&provider(Some("https://api.anthropic.com"), Some("anthropic-messages")))
             .unwrap_err();
         assert_eq!(err.code, QuotaErrorCode::Unsupported);
         let err = target_for(&provider(Some("https://relay.example.com"), None)).unwrap_err();
         assert_eq!(err.code, QuotaErrorCode::Unsupported);
+    }
+
+    #[test]
+    fn target_detects_plan_providers() {
+        // Kimi:计划端点固定,与协议无关
+        assert!(matches!(
+            target_for(&provider(Some("https://api.kimi.com/coding"), Some("anthropic-messages"))).unwrap(),
+            Target::KimiPlan
+        ));
+        // 智谱国际 / 国内
+        assert!(matches!(
+            target_for(&provider(Some("https://api.z.ai/api/coding/paas/v4"), Some("openai-completions"))).unwrap(),
+            Target::ZhipuPlan { .. }
+        ));
+        assert!(matches!(
+            target_for(&provider(Some("https://open.bigmodel.cn/api/coding/paas/v4"), None)).unwrap(),
+            Target::ZhipuPlan { .. }
+        ));
+        // MiniMax 国际 / 国内
+        assert!(matches!(
+            target_for(&provider(Some("https://api.minimax.io/anthropic"), Some("anthropic-messages"))).unwrap(),
+            Target::MiniMaxPlan { .. }
+        ));
+        assert!(matches!(
+            target_for(&provider(Some("https://api.minimaxi.com/anthropic"), None)).unwrap(),
+            Target::MiniMaxPlan { .. }
+        ));
+    }
+
+    #[test]
+    fn origin_of_extracts_scheme_and_host() {
+        assert_eq!(
+            origin_of("https://api.z.ai/api/coding/paas/v4").as_deref(),
+            Some("https://api.z.ai")
+        );
+        assert_eq!(
+            origin_of("http://open.bigmodel.cn/").as_deref(),
+            Some("http://open.bigmodel.cn")
+        );
+        assert!(origin_of("api.z.ai").is_none());
+    }
+
+    #[test]
+    fn extract_reset_time_handles_seconds_ms_string_and_invalid() {
+        // 字符串原样
+        assert_eq!(
+            extract_reset_time(Some(&serde_json::json!("2026-09-13T00:00:00Z"))).as_deref(),
+            Some("2026-09-13T00:00:00Z")
+        );
+        // 秒级时间戳 → ISO
+        let iso = extract_reset_time(Some(&serde_json::json!(1_760_000_000))).unwrap();
+        assert!(iso.ends_with('Z'));
+        // 毫秒级 → 同一时刻
+        assert_eq!(iso, extract_reset_time(Some(&serde_json::json!(1_760_000_000_000i64))).unwrap());
+        // 非法
+        assert!(extract_reset_time(Some(&serde_json::json!(0))).is_none());
+        assert!(extract_reset_time(Some(&serde_json::json!(-5))).is_none());
+        assert!(extract_reset_time(Some(&serde_json::json!(""))).is_none());
+        assert!(extract_reset_time(None).is_none());
+    }
+
+    #[test]
+    fn parse_kimi_plan_windows() {
+        let v: Value = serde_json::from_str(
+            r#"{
+                "usage": {"limit": 1000, "remaining": 250, "resetTime": 1760000000},
+                "limits": [
+                    {"detail": {"limit": 100, "remaining": 10, "resetTime": 1760000000}},
+                    {"other": true}
+                ]
+            }"#,
+        )
+        .unwrap();
+        let QuotaResult::Plan { name, tiers } = parse_kimi_plan(&v).unwrap() else {
+            panic!("wrong variant");
+        };
+        assert!(name.is_none());
+        assert_eq!(tiers.len(), 2);
+        assert_eq!(tiers[0].name, "weekly");
+        assert_eq!(tiers[0].used, Some(750.0));
+        assert_eq!(tiers[0].total, Some(1000.0));
+        assert_eq!(tiers[0].utilization, 75.0);
+        assert!(tiers[0].resets_at.is_some());
+        assert_eq!(tiers[1].name, "five_hour");
+        assert_eq!(tiers[1].utilization, 90.0);
+        // 无 limits/usage → bad_response
+        let v: Value = serde_json::from_str("{}").unwrap();
+        assert_eq!(parse_kimi_plan(&v).unwrap_err().code, QuotaErrorCode::BadResponse);
+    }
+
+    #[test]
+    fn parse_zhipu_plan_windows_and_level() {
+        let v: Value = serde_json::from_str(
+            r#"{
+                "data": {
+                    "level": "glm-coding-plan",
+                    "limits": [
+                        {"type": "TOKENS_LIMIT", "unit": 3, "percentage": 42.5, "nextResetTime": 1760000000000},
+                        {"type": "CREDIT_LIMIT", "unit": 6, "percentage": 10.0, "nextResetTime": null},
+                        {"type": "OTHER", "unit": 3, "percentage": 99.0}
+                    ]
+                }
+            }"#,
+        )
+        .unwrap();
+        let QuotaResult::Plan { name, tiers } = parse_zhipu_plan(&v).unwrap() else {
+            panic!("wrong variant");
+        };
+        assert_eq!(name.as_deref(), Some("glm-coding-plan"));
+        assert_eq!(tiers.len(), 2);
+        assert_eq!(tiers[0].name, "five_hour");
+        assert_eq!(tiers[0].utilization, 42.5);
+        assert!(tiers[0].resets_at.is_some());
+        assert_eq!(tiers[1].name, "weekly");
+        assert_eq!(tiers[1].utilization, 10.0);
+        assert!(tiers[1].resets_at.is_none());
+
+        // type 大小写不敏感
+        let v: Value = serde_json::from_str(
+            r#"{"data": {"limits": [{"type": "tokens_limit", "unit": 3, "percentage": 1.0}]}}"#,
+        )
+        .unwrap();
+        let QuotaResult::Plan { tiers, .. } = parse_zhipu_plan(&v).unwrap() else {
+            panic!("wrong variant");
+        };
+        assert_eq!(tiers.len(), 1);
+
+        // 缺 limits / 无有效条目 → bad_response
+        let v: Value = serde_json::from_str(r#"{"data": {}}"#).unwrap();
+        assert_eq!(parse_zhipu_plan(&v).unwrap_err().code, QuotaErrorCode::BadResponse);
+    }
+
+    #[test]
+    fn parse_minimax_plan_inverts_remaining() {
+        let v: Value = serde_json::from_str(
+            r#"{
+                "model_remains": [
+                    {"model_name": "mini-max-video", "current_interval_remaining_percent": 50.0},
+                    {"model_name": "general",
+                     "current_interval_remaining_percent": 30.0, "end_time": 1760000000,
+                     "current_weekly_status": 1, "current_weekly_remaining_percent": 80.0}
+                ]
+            }"#,
+        )
+        .unwrap();
+        let QuotaResult::Plan { tiers, .. } = parse_minimax_plan(&v).unwrap() else {
+            panic!("wrong variant");
+        };
+        assert_eq!(tiers.len(), 2);
+        assert_eq!(tiers[0].name, "five_hour");
+        assert_eq!(tiers[0].utilization, 70.0);
+        assert_eq!(tiers[1].name, "weekly");
+        assert_eq!(tiers[1].utilization, 20.0);
+
+        // weekly_status != 1 → 不展示假周桶
+        let v: Value = serde_json::from_str(
+            r#"{"model_remains": [{"model_name": "general", "current_interval_remaining_percent": 0.0, "current_weekly_status": 3, "current_weekly_remaining_percent": 100.0}]}"#,
+        )
+        .unwrap();
+        let QuotaResult::Plan { tiers, .. } = parse_minimax_plan(&v).unwrap() else {
+            panic!("wrong variant");
+        };
+        assert_eq!(tiers.len(), 1);
+
+        let v: Value = serde_json::from_str("{}").unwrap();
+        assert_eq!(parse_minimax_plan(&v).unwrap_err().code, QuotaErrorCode::BadResponse);
+    }
+
+    #[test]
+    fn quota_result_serializes_plan_tagged() {
+        let v = serde_json::to_value(QuotaResult::Plan {
+            name: Some("glm-coding-plan".into()),
+            tiers: vec![QuotaTier {
+                name: "weekly".into(),
+                utilization: 12.5,
+                resets_at: None,
+                used: None,
+                total: None,
+                unit: None,
+            }],
+        })
+        .unwrap();
+        assert_eq!(v["kind"], "plan");
+        assert_eq!(v["tiers"][0]["name"], "weekly");
     }
 
     #[test]

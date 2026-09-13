@@ -19,7 +19,7 @@
 - 🎛️ **控制端口可配置**：默认 = DSH 端口 + 1，被占用自动后移 10 个端口扫描，也可在设置里指定，保存立即重绑——端口冲突不再是事儿
 - 🔄 **智能更新**：仅当 npm registry 上确有新版本时才出现「更新到 vX.X.X」按钮
 - 🖥️ **托管控制台**：状态卡（端口 / 控制端口 / 版本 / 运行时长）、启动 / 停止 / 重启、实时日志（内存环形 + 滚动文件）
-- 💰 **额度查询**：读取 DSH 配置（`~/.dsh/settings.yaml` + `.credentials.yaml`，支持 `DSH_HOME` 覆盖），自动列出全部 API（DeepSeek Official + `llm-pi-ai.providers` 目录 / 自定义网关），按 API 类型查询并展示：DeepSeek 按币种显示总可用 / 赠送 / 充值、OpenRouter 显示总额度 / 已用 / 剩余、StepFun / SiliconFlow / Novita 走各自官方端点、其余 OpenAI 协议端点走通用查询（`GET {baseURL}/user/balance`），Anthropic 协议暂不支持。由 Rust 侧发起请求，DSH 未启动也可用；Key 全程只在 Rust 侧解析（环境变量 → 凭据文件 refs，与 DSH 优先级一致），界面仅显示脱敏 Key，不落盘、不入日志
+- 💰 **额度查询**：读取 DSH 配置（`~/.dsh/settings.yaml` + `.credentials.yaml`，支持 `DSH_HOME` 覆盖），自动列出全部 API（DeepSeek Official + `llm-pi-ai.providers` 目录 / 自定义网关），按 API 类型查询并展示：DeepSeek 按币种显示总可用 / 赠送 / 充值，OpenRouter 显示总额度 / 已用 / 剩余，Kimi For Coding / 智谱（z.ai、bigmodel.cn）/ MiniMax 显示订阅套餐用量（分窗口百分比 + 进度条 + 重置时间），StepFun / SiliconFlow / Novita 走各自官方端点，其余 OpenAI 协议端点走通用查询（`GET {baseURL}/user/balance`）。每个 API 带独立「自动查询」开关（持久化，关闭后不自动查询、全部刷新跳过）；由 Rust 侧发起请求，DSH 未启动也可用；Key 全程只在 Rust 侧解析（环境变量 → 凭据文件 refs，与 DSH 优先级一致），界面仅显示脱敏 Key，不落盘、不入日志
 - 🪟 **毛玻璃 UI**：透明亚克力窗口 + Linear 风格双层布局，自定义标题栏，双击最大化
 - 🧷 **系统托盘**：左键单击唤出 / 最小化，右键菜单按状态智能启停（外部实例只读不管）；关闭窗口最小化到托盘
 - 🌍 **中英双语**：设置页一键切换，界面 + 托盘菜单同步，后续可加更多语言
